@@ -3,11 +3,11 @@ Ambiente de Desenvolvimento Local dos serviços RCaldas em Docker
 
 Faça clone do repositório com o seguinte comando para baixar os submódulos:
 
-`git clone --recurse-submodules git@github.com:rcaldas-com/rcaldas-dev.git`
+`git clone --recurse-submodules git@github.com:rcaldas-com/dev.git rcaldas`
 
 Entre no novo diretório e faça checkout nos submódulos:
 
-`cd rcaldas-dev`
+`cd rcaldas`
 
 `git submodule foreach -q --recursive 'git checkout main || git checkout master'`
 
