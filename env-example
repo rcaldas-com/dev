@@ -1,0 +1,9 @@
+TITLE=RCaldas
+DESCRIPTION=Serviços Web, Blockchain e Segurança
+
+AUTH_TRUST_HOST=http://localhost:8001
+
+MONGO_URI=mongodb://user:password@mongo/rcaldas?authSource=admin&connectTimeoutMS=10000
+AUTH_SECRET=xZ37FVf9JhsWdYgbsopysaRwZyf0vatV8esCvUYCfEsOCBrMcu8d83inVwauZoqn
+
+NODE_ENV=development
