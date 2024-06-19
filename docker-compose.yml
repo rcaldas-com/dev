@@ -19,8 +19,8 @@ services:
       - ./web/src:/app/src
       - ./web/public:/app/public
       - ./web/scripts:/app/scripts
-      - ./web/auth.ts:/app/auth.ts
-      - ./web/middleware.ts:/app/middleware.ts
+      # - ./web/auth.ts:/app/auth.ts
+      # - ./web/middleware.ts:/app/middleware.ts
       - ./web/package.json:/app/package.json
       - ./web/package-lock.json:/app/package-lock.json
     depends_on:
@@ -36,3 +36,4 @@ services:
       - 27011:27017
     volumes:
       - ./db:/data/db
+      - ./bkp:/dump

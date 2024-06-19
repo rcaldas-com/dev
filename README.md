@@ -24,3 +24,12 @@ Siga os logs do serviço "web":
 `docker compose logs -f web`
 
 Acesso o app pelo link http://localhost:8001
+
+
+### Banco de Dados
+
+O dump do banco de dados por ser colocado no diretório `bkp/`
+
+O restore do backup pode ser feito com o comando:
+
+`docker compose exec -it mongo sh -c 'mongorestore --objcheck --drop --uri="$MONGO_URI"'`
