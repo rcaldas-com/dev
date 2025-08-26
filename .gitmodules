@@ -1,3 +1,6 @@
 [submodule "web"]
 	path = web
 	url = https://github.com/rcaldas-com/web.git
+[submodule "wallet"]
+	path = wallet
+	url = git@github.com:rcaldas-com/wallet.git

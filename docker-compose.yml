@@ -8,6 +8,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - web
+      - wallet
   web:
     build: web/
     # image: node:latest
@@ -23,6 +24,17 @@ services:
       - ./web/package-lock.json:/app/package-lock.json
     depends_on:
       - mongo
+  wallet:
+    build: wallet/
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./wallet/app:/app/app
+      - ./wallet/public:/app/public
+      - ./wallet/tailwind.config.ts:/app/tailwind.config.ts
+      - ./wallet/package.json:/app/package.json
+      - ./wallet/package-lock.json:/app/package-lock.json
+      - ./wallet/next.config.js:/app/next.config.js
   mongo:
     image: mongo:7
     restart: unless-stopped
