@@ -28,13 +28,17 @@ services:
     build: wallet/
     restart: unless-stopped
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./wallet/app:/app/app
       - ./wallet/public:/app/public
+      - ./wallet/middleware.ts:/app/middleware.ts
       - ./wallet/tailwind.config.ts:/app/tailwind.config.ts
+      - ./wallet/next.config.ts:/app/next.config.ts
+      - ./wallet/next.config.js:/app/next.config.js
       - ./wallet/package.json:/app/package.json
       - ./wallet/package-lock.json:/app/package-lock.json
-      - ./wallet/next.config.js:/app/next.config.js
   mongo:
     image: mongo:7
     restart: unless-stopped
