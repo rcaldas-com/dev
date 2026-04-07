@@ -8,37 +8,22 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - web
-      - wallet
   web:
     build: web/
-    # image: node:latest
-    # entrypoint: sleep infinity
-    restart: unless-stopped
-    env_file: .env
-    volumes:
-      - ./web/src:/app/src
-      - ./web/public:/app/public
-      # - ./web/auth.ts:/app/auth.ts
-      # - ./web/middleware.ts:/app/middleware.ts
-      - ./web/package.json:/app/package.json
-      - ./web/package-lock.json:/app/package-lock.json
-    depends_on:
-      - mongo
-  wallet:
-    build: wallet/
     restart: unless-stopped
     env_file: .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./wallet/app:/app/app
-      - ./wallet/public:/app/public
-      - ./wallet/middleware.ts:/app/middleware.ts
-      - ./wallet/tailwind.config.ts:/app/tailwind.config.ts
-      - ./wallet/next.config.ts:/app/next.config.ts
-      - ./wallet/next.config.js:/app/next.config.js
-      - ./wallet/package.json:/app/package.json
-      - ./wallet/package-lock.json:/app/package-lock.json
+      - ./web/app:/app/app
+      - ./web/components:/app/components
+      - ./web/lib:/app/lib
+      - ./web/public:/app/public
+      - ./web/middleware.ts:/app/middleware.ts
+      - ./web/package.json:/app/package.json
+      - ./web/package-lock.json:/app/package-lock.json
+    depends_on:
+      - mongo
   mongo:
     image: mongo:7
     restart: unless-stopped
