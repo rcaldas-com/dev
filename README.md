@@ -40,3 +40,14 @@ O restore do backup pode ser feito com o comando:
 Abra um shell interativo no container web
 `docker compose exec -it web bash`
 
+
+### Seed do módulo Finance
+
+Popula o banco com dados de perfil, cartões, despesas e parcelas:
+
+```bash
+cd ~/car && docker compose exec -T mongo mongosh --quiet -u user -p password --authenticationDatabase admin rcaldas < /home/robca/rcaldas/scripts/seed-finance.js
+```
+
+O script limpa os dados existentes antes de inserir. Os dados de referência estão em `scripts/seed-finance.js` (dump de 2026-04-07).
+

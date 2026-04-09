@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Verificação de Email - RCaldas</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+      table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+      body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; }
+      .container {
+        max-width: 420px;
+        margin: 0 auto;
+        background: #f9fafb;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 32px 20px;
+        font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+      }
+      .logo {
+        display: block;
+        margin: 0 auto 24px auto;
+        width: 64px;
+        height: 64px;
+        background: #27272a;
+        border-radius: 16px;
+        text-align: center;
+        line-height: 64px;
+        font-size: 1.1rem;
+        color: #fff;
+        font-weight: bold;
+        letter-spacing: 1px;
+      }
+      h1 {
+        font-size: 1.5rem;
+        color: #22223b;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+      p {
+        color: #4b5563;
+        font-size: 1rem;
+        margin-bottom: 24px;
+        text-align: center;
+      }
+      .button {
+        display: block;
+        width: 100%;
+        background: #27272a;
+        color: #fff !important;
+        text-decoration: none;
+        padding: 14px 0;
+        border-radius: 8px;
+        font-size: 1.1rem;
+        font-weight: 600;
+        text-align: center;
+        margin-bottom: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      }
+      .footer {
+        font-size: 0.9rem;
+        color: #9ca3af;
+        text-align: center;
+        margin-top: 24px;
+      }
+      @media (max-width: 480px) {
+        .container { padding: 18px 4vw; }
+        .logo { width: 48px; height: 48px; line-height: 48px; font-size: 0.9rem; }
+      }
+    </style>
+  </head>
+  <body style="background: #e0e7ef;">
+    <div class="container">
+      <div class="logo">RC</div>
+      <h1>Verificação de Email</h1>
+      <p>Olá, <b>{{ name }}</b>!<br>
+        Sua conta foi criada com sucesso.<br>
+        Clique no botão abaixo para verificar seu email:
+      </p>
+      <a href="{{ verifyUrl }}" class="button" target="_blank">
+        Verificar Email
+      </a>
+      <p style="font-size:0.95rem; color:#6b7280;">
+        Se você não criou esta conta, ignore este e-mail.<br>
+        O link expira em 24 horas.
+      </p>
+      <div class="footer">
+        {{ app|capitalize }}<br>
+        &copy; {{ now().year }}
+      </div>
+    </div>
+  </body>
+</html>

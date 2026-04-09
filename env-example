@@ -7,4 +7,11 @@ MONGODB_URI=mongodb://user:password@mongo/rcaldas?authSource=admin&connectTimeou
 AUTH_SECRET=xZ37FVf9JhsWdYgbsopysaRwZyf0vatV8esCvUYCfEsOCBrMcu8d83inVwauZoqn
 AUTH_RESEND_KEY=6jdUWzKoaFmGshXy+4GIvfUcLmvoviP4bZ6P3hvVR
 
+REDIS_URL=redis://redis:6379
+
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+
 NODE_ENV=development

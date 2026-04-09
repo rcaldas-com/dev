@@ -24,6 +24,7 @@ services:
       - ./web/package-lock.json:/app/package-lock.json
     depends_on:
       - mongo
+      - redis
   mongo:
     image: mongo:7
     restart: unless-stopped
@@ -36,3 +37,17 @@ services:
     volumes:
       - ./db:/data/db
       - ./bkp:/dump
+  redis:
+    image: redis:8
+    restart: unless-stopped
+    volumes:
+      - ./redis-data:/data
+  emailer:
+    build: ./emailer
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - redis
+    volumes:
+      - ./emailer/app.py:/app/app.py
+      - ./emailer/templates:/app/templates
