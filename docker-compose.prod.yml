@@ -20,6 +20,8 @@ services:
     container_name: rcaldas-emailer-prod
     restart: unless-stopped
     env_file: .env
+    volumes:
+      - ./emailer/templates:/app/templates:ro
     deploy:
       resources:
         limits:
