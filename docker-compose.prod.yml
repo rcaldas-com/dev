@@ -1,0 +1,47 @@
+services:
+  web:
+    image: registry.rcaldas.com/rcaldas/web:latest
+    container_name: rcaldas-web-prod
+    restart: unless-stopped
+    ports:
+      - "8611:3000"
+    env_file: .env
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+        reservations:
+          memory: 128M
+    depends_on:
+      - redis
+
+  emailer:
+    image: registry.rcaldas.com/rcaldas/emailer:latest
+    container_name: rcaldas-emailer-prod
+    restart: unless-stopped
+    env_file: .env
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+        reservations:
+          memory: 64M
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: rcaldas-redis-prod
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 500M
+        reservations:
+          memory: 64M
+
+volumes:
+  redis-data:
