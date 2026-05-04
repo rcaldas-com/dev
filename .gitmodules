@@ -4,3 +4,7 @@
 [submodule "wallet"]
 	path = wallet
 	url = git@github.com:rcaldas-com/wallet.git
+[submodule "emailer"]
+	path = emailer
+	url = https://github.com/rcaldas-com/mailer.git
+	branch = main
