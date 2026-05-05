@@ -67,6 +67,18 @@ LOCAL_S3_SECRET=$(get_env_var "S3_SECRET")
 HAS_LOCAL_S3=false
 [ -n "$LOCAL_S3_HOST" ] && [ -n "$LOCAL_S3_KEY" ] && [ -n "$LOCAL_S3_SECRET" ] && HAS_LOCAL_S3=true
 
+IS_EXTERNAL_S3=false
+if echo "$LOCAL_S3_HOST" | grep -qE 'localhost|127\.0\.0\.1|host\.docker\.internal'; then
+    IS_EXTERNAL_S3=true
+fi
+if $IS_EXTERNAL_S3; then
+    S3_URL=$(echo "$LOCAL_S3_HOST" | sed 's/host\.docker\.internal/127.0.0.1/g')
+    S3_NET_ARGS="--network=host"
+else
+    S3_URL=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g')
+    S3_NET_ARGS="--network=$(basename "$(pwd)")_default"
+fi
+
 PROD_SERVER_URI=$(server_uri "$PROD_MONGO_URI")
 
 # Detectar se o MongoDB local é externo (host/porta) ou interno (service name dentro do compose)
@@ -194,7 +206,7 @@ if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
         docker run --rm --network="$S3_NETWORK" \
             -v "$(pwd)/$BACKUP_DIR/s3:/data" \
             --entrypoint /bin/sh minio/mc:latest -c "
-                mc alias set local '$LOCAL_S3_DOCKER' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET'
+                mc alias set local '$S3_URL' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET'
                 if mc ls local/ >/dev/null 2>&1; then
                     echo 'Limpando S3 local...'
                     mc ls local 2>/dev/null | awk '{print \$NF}' | sed 's|/$||' | while read bucket; do
@@ -252,10 +264,9 @@ docker run --rm $MONGO_NET_ARGS mongo:7 \
 if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
     info ""
     info "📊 S3 local:"
-    LOCAL_S3_DOCKER=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g; s/127.0.0.1/minio/g; s/host.docker.internal/minio/g')
-    docker run --rm --network="$(basename "$(pwd)")_default" \
+    docker run --rm $S3_NET_ARGS$(pwd)")_default" \
         --entrypoint /bin/sh minio/mc:latest -c "
-            mc alias set local '$LOCAL_S3_DOCKER' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET' >/dev/null 2>&1
+            mc alias set local '$S3_URL' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET' >/dev/null 2>&1
             mc du local/ 2>/dev/null | tail -1 || echo '  (nenhum arquivo)'
         " 2>/dev/null || true
 fi
