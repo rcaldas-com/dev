@@ -189,7 +189,7 @@ fi
 if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
     log "📤 Restaurando S3..."
     if [ -d "$BACKUP_DIR/s3" ] && [ "$(ls -A "$BACKUP_DIR/s3" 2>/dev/null)" ]; then
-        LOCAL_S3_DOCKER=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g')
+        LOCAL_S3_DOCKER=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g; s/127.0.0.1/minio/g; s/host.docker.internal/minio/g')
         S3_NETWORK="$(basename "$(pwd)")_default"
         docker run --rm --network="$S3_NETWORK" \
             -v "$(pwd)/$BACKUP_DIR/s3:/data" \
@@ -252,7 +252,7 @@ docker run --rm $MONGO_NET_ARGS mongo:7 \
 if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
     info ""
     info "📊 S3 local:"
-    LOCAL_S3_DOCKER=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g')
+    LOCAL_S3_DOCKER=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g; s/127.0.0.1/minio/g; s/host.docker.internal/minio/g')
     docker run --rm --network="$(basename "$(pwd)")_default" \
         --entrypoint /bin/sh minio/mc:latest -c "
             mc alias set local '$LOCAL_S3_DOCKER' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET' >/dev/null 2>&1
