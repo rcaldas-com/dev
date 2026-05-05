@@ -41,6 +41,32 @@ Abra um shell interativo no container web
 `docker compose exec -it web bash`
 
 
+### Teste manual do emailer em produção
+
+Para validar se o worker de email está consumindo a fila e enviando pelo SMTP, publique uma mensagem diretamente no Redis:
+
+```bash
+docker compose exec redis redis-cli LPUSH email:send '{
+	"to":"seu-email@dominio.com",
+	"subject":"Teste RCaldas Emailer",
+	"template":"reset-password",
+	"variables":{
+		"name":"Teste",
+		"resetUrl":"https://web.rcaldas.com/reset-password?token=teste",
+		"app":"RCaldas"
+	}
+}'
+```
+
+Depois acompanhe os logs:
+
+```bash
+docker compose logs emailer --tail=80
+```
+
+Se aparecer `[DRY-RUN EMAIL]`, o container não está com SMTP configurado. Se aparecer `SMTP aceitou email`, o servidor SMTP recebeu a mensagem e qualquer falha posterior tende a ser fila/spam/política do provedor.
+
+
 ### Seed do módulo Finance
 
 Popula o banco com dados de perfil, cartões, despesas e parcelas:
