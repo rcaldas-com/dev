@@ -35,9 +35,9 @@ get_config_var() { grep "^$1=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2- | tr 
 get_env_var()    { grep "^$1=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"'; }
 
 # Remove o caminho do banco do URI para conectar ao servidor inteiro
-# mongodb://user:pass@host:port/dbname?params -> mongodb://user:pass@host:port?params
+# mongodb://user:pass@host:port/dbname?params -> mongodb://user:pass@host:port/?params
 server_uri() {
-    echo "$1" | sed -E 's|(mongodb://[^/]+)/[^?]*(\?.*)?|\1\2|'
+    echo "$1" | sed -E 's|(mongodb://[^/]+)/[^?]*(\?.*)?|\1/\2|'
 }
 
 extract_mongo_creds() {
@@ -94,7 +94,7 @@ MONGO_PASS="${MONGO_CREDS[1]}"
 log "🚀 Iniciando restauração completa de produção..."
 info "   Mongo prod:  $PROD_SERVER_URI"
 $IS_EXTERNAL_MONGO \
-    && info "   Mongo local: $LOCAL_SERVER_URI (externo — requer serviço externo ativo)" \
+    && info "   Mongo local: $LOCAL_SERVER_URI (porta do projeto car — certifique-se de que o car está rodando)" \
     || info "   Mongo local: via rede $COMPOSE_NET"
 $HAS_PROD_S3 \
     && info "   S3 prod:     $PROD_S3_HOST" \
@@ -138,8 +138,8 @@ fi
 
 # === FASE 3: PREPARAR SERVIÇOS LOCAIS ===
 if $IS_EXTERNAL_MONGO; then
-    warn "⏭️  MongoDB externo — verificando conectividade..."
-    info "   Certifique-se de que o projeto que provê o MongoDB está rodando"
+    warn "⏭️  MongoDB em $LOCAL_SERVER_URI (porta do projeto car no host)"
+    info "   Para garantir conectividade: cd ~/car && docker compose up -d mongo"
 else
     log "🔄 Reiniciando serviços locais..."
     docker compose down >/dev/null 2>&1 || true
@@ -157,7 +157,7 @@ for i in {1..30}; do
     fi
     if [ "$i" -eq 30 ]; then
         error "❌ MongoDB local não respondeu após 60s"
-        $IS_EXTERNAL_MONGO && error "   Verifique se o serviço externo está rodando (ex: cd ~/car && docker compose up -d mongo)"
+        $IS_EXTERNAL_MONGO && error "   Execute antes: cd ~/car && docker compose up -d mongo"
         exit 1
     fi
     sleep 2
