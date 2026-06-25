@@ -22,6 +22,9 @@ services:
     env_file: .env
     volumes:
       - ./emailer/templates:/app/templates:ro
+    networks:
+      - default
+      - mailu_default
     deploy:
       resources:
         limits:
@@ -44,6 +47,10 @@ services:
           memory: 500M
         reservations:
           memory: 64M
+
+networks:
+  mailu_default:
+    external: true
 
 volumes:
   redis-data:
