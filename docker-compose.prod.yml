@@ -1,7 +1,6 @@
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:latest
-    container_name: rcaldas-web-prod
+    image: registry.rcaldas.com/rcaldas/web:1.21
     restart: unless-stopped
     ports:
       - "8611:3000"
@@ -14,10 +13,8 @@ services:
           memory: 128M
     depends_on:
       - redis
-
   emailer:
-    image: registry.rcaldas.com/rcaldas/emailer:latest
-    container_name: rcaldas-emailer-prod
+    image: registry.rcaldas.com/rcaldas/emailer:1.1
     restart: unless-stopped
     env_file: .env
     volumes:
@@ -33,10 +30,8 @@ services:
           memory: 64M
     depends_on:
       - redis
-
   redis:
     image: redis:8-alpine
-    container_name: rcaldas-redis-prod
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
@@ -47,10 +42,8 @@ services:
           memory: 500M
         reservations:
           memory: 64M
-
 networks:
   mailu_default:
     external: true
-
 volumes:
   redis-data:
