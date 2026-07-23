@@ -79,3 +79,12 @@ services:
     volumes:
       - ./emailer/app.py:/app/app.py
       - ./emailer/templates:/app/templates
+  monitor-worker:
+    build: ./monitor-worker
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - mongo
+      - redis
+    volumes:
+      - ./monitor-worker/app.py:/app/app.py
