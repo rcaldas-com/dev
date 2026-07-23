@@ -1,6 +1,6 @@
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:1.21
+    image: registry.rcaldas.com/rcaldas/web:2.0
     restart: unless-stopped
     ports:
       - "8611:3000"
@@ -41,7 +41,7 @@ services:
         reservations:
           memory: 64M
   emailer:
-    image: registry.rcaldas.com/rcaldas/emailer:1.1
+    image: registry.rcaldas.com/rcaldas/emailer:1.3
     restart: unless-stopped
     env_file: .env
     volumes:
