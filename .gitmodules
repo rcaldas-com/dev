@@ -1,9 +1,11 @@
 [submodule "web"]
 	path = web
 	url = https://github.com/rcaldas-com/web.git
+	branch = main
 [submodule "wallet"]
 	path = wallet
-	url = git@github.com:rcaldas-com/wallet.git
+	url = https://github.com/rcaldas-com/wallet.git
+	branch = main
 [submodule "emailer"]
 	path = emailer
 	url = https://github.com/rcaldas-com/mailer.git

@@ -1,20 +1,52 @@
+# Copie para .env e preencha. NÃO commite o .env (coberto pelo .gitignore).
+
+# ═══════════════ Identidade da aplicação ═══════════════
 TITLE=RCaldas
 DESCRIPTION=Serviços Web, Blockchain e Segurança
-
+# Dev: http://localhost:8001 · Produção: https://seu-dominio
 AUTH_TRUST_HOST=http://localhost:8001
 
-MONGODB_URI=mongodb://user:password@mongo/rcaldas?authSource=admin&connectTimeoutMS=10000
-AUTH_SECRET=xZ37FVf9JhsWdYgbsopysaRwZyf0vatV8esCvUYCfEsOCBrMcu8d83inVwauZoqn
-AUTH_RESEND_KEY=6jdUWzKoaFmGshXy+4GIvfUcLmvoviP4bZ6P3hvVR
+# ═══════════════ Sessão ═══════════════
+# DEVE ser idêntico ao AUTH_SECRET do projeto car: o cookie de sessão `userId`
+# é assinado (JWT) com este segredo e compartilhado entre os apps.
+# Valores diferentes quebram o login único.
+# Gere com: openssl rand -base64 48
+AUTH_SECRET=
 
+# ═══════════════ Banco ═══════════════
+MONGO_URI=mongodb://user:password@mongo/rcaldas?authSource=admin
+
+# ═══════════════ Redis (fila de emails do emailer) ═══════════════
 REDIS_URL=redis://redis:6379
 
+# ═══════════════ Wallet / Stellar ═══════════════
+# Secret da conta que financia contas novas e recargas de reserva.
+MAIN_WALLET=
+# Serviço de cotações (ccxt) na rede do compose.
+CCXT_URL=http://ccxt:8000
+# Para onde o app web aponta o link do Wallet.
+# Dev: /wallet (subcaminho) · Produção: https://wallet.seu-dominio
+WALLET_URL=/wallet
+# Opcionais — descomente para sobrescrever os padrões:
+# STELLAR_NETWORK=public                        # public (padrão) | testnet
+# STELLAR_HORIZON=https://horizon.stellar.org
+# STELLAR_HOME_DOMAIN=rcaldas.com
+# STELLAR_INITIAL_BALANCE=2                     # XLM ao criar conta nova
+# STELLAR_RESERVE_TOPUP=1.5                     # XLM de recarga p/ trustline
+# BTC_API=https://blockstream.info/api          # aponte p/ Esplora próprio se quiser
+
+# ═══════════════ DigitaR (OCR via IA) ═══════════════
+# Sem a chave, a extração de texto do DigitaR falha em tempo de execução.
+OPENAI_API_KEY=
+OCR_MODEL=gpt-4.1
+
+# ═══════════════ SMTP (emailer) ═══════════════
+# Sem SMTP_HOST o emailer roda em dry-run: imprime o email no log e não envia.
 SMTP_HOST=
 SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 
-OPENAI_API_KEY=
-OCR_MODEL=gpt-4.1
-
+# ═══════════════ Ambiente ═══════════════
 NODE_ENV=development
+NEXT_TELEMETRY_DISABLED=1
