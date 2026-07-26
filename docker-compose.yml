@@ -51,7 +51,9 @@ services:
     build: ./ccxt
     restart: unless-stopped
     environment:
-      CCXT_EXCHANGES: binance,kraken,okx
+      # Mesma ordem do prod (docker-compose.prod.yml) — OKX primeiro (maior
+      # volume que Kraken), Binance em segundo.
+      CCXT_EXCHANGES: okx,binance,kraken
       CCXT_CACHE_TTL: "10"
   mongo:
     image: mongo:8.0

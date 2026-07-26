@@ -1,6 +1,6 @@
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:2.0
+    image: registry.rcaldas.com/rcaldas/web:2.2
     restart: unless-stopped
     ports:
       - "8611:3000"
@@ -14,7 +14,7 @@ services:
     depends_on:
       - redis
   wallet:
-    image: registry.rcaldas.com/rcaldas/wallet:1.0
+    image: registry.rcaldas.com/rcaldas/wallet:1.3
     restart: unless-stopped
     ports:
       - "8613:3000"
@@ -32,7 +32,12 @@ services:
     image: registry.rcaldas.com/rcaldas/ccxt:1.0
     restart: unless-stopped
     environment:
-      CCXT_EXCHANGES: binance,kraken,okx
+      # OKX primeiro (maior volume que Kraken); Binance em segundo — o VPS
+      # atual (Linode Atlanta/EUA) toma 451 da Binance por geobloqueio
+      # jurídico, então ela sempre falha e cai pra próxima. Reordenado pra
+      # não gastar a primeira tentativa numa exchange que sabemos que falha
+      # aqui. Reavaliar quando migrar de região.
+      CCXT_EXCHANGES: okx,binance,kraken
       CCXT_CACHE_TTL: "10"
     deploy:
       resources:
