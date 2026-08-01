@@ -74,18 +74,15 @@ def price_on(ex: ccxt.Exchange, base: str, quote: str):
     return None
 
 
-@app.get("/price")
-def price(base: str, quote: str = "BRL"):
-    base = base.upper()
-    quote = quote.upper()
+def _resolve(base: str, quote: str):
+    """Resolve base/quote numa única exchange (direto ou roteado por USDT nela),
+    tentando cada exchange e os equivalentes conhecidos (COIN_ALIASES). Retorna
+    {price, source} ou None. NÃO faz ponte entre exchanges (isso fica no
+    endpoint), pra não recorrer infinitamente."""
     if base == quote:
-        return {"base": base, "quote": quote, "price": 1.0, "source": "identity"}
-
-    # Tenta o código original e, se não houver par, os equivalentes conhecidos.
+        return {"price": 1.0, "source": "identity"}
     base_candidates = [base] + COIN_ALIASES.get(base, [])
     quote_candidates = [quote] + COIN_ALIASES.get(quote, [])
-
-    errors = []
     for eid in EXCHANGE_IDS:
         try:
             ex = get_exchange(eid)
@@ -96,18 +93,41 @@ def price(base: str, quote: str = "BRL"):
                     value = price_on(ex, b, q)
                     if value:
                         via = "" if (b == base and q == quote) else f" (via {b}/{q})"
-                        return {
-                            "base": base,
-                            "quote": quote,
-                            "price": float(value),
-                            "source": f"{eid}{via}",
-                        }
-        except Exception as exc:  # noqa: BLE001 - queremos tentar a próxima exchange
-            errors.append(f"{eid}: {exc}")
+                        return {"price": float(value), "source": f"{eid}{via}"}
+        except Exception:  # noqa: BLE001 - tenta a próxima exchange
+            continue
+    return None
+
+
+@app.get("/price")
+def price(base: str, quote: str = "BRL"):
+    base = base.upper()
+    quote = quote.upper()
+
+    # 1) Resolução direta (mesma exchange, direto ou via USDT).
+    direct = _resolve(base, quote)
+    if direct:
+        return {"base": base, "quote": quote, **direct}
+
+    # 2) Ponte cross-exchange via USD: base/USD e USD/quote podem vir de
+    #    exchanges DIFERENTES (ex.: EUR/USD na Kraken × USD/BRL via USDT/BRL na
+    #    OKX). Resolve pares que não têm caminho numa única exchange — o caso do
+    #    EUR->BRL com a Binance bloqueada no VPS dos EUA. USD é a ponte universal
+    #    (quase todo ativo tem par em USD/USDT).
+    if base != "USD" and quote != "USD":
+        leg1 = _resolve(base, "USD")
+        leg2 = _resolve("USD", quote)
+        if leg1 and leg2:
+            return {
+                "base": base,
+                "quote": quote,
+                "price": leg1["price"] * leg2["price"],
+                "source": f"cross-USD ({leg1['source']} x {leg2['source']})",
+            }
 
     raise HTTPException(
         status_code=404,
-        detail={"error": "price unavailable", "tried": EXCHANGE_IDS, "errors": errors},
+        detail={"error": "price unavailable", "base": base, "quote": quote, "tried": EXCHANGE_IDS},
     )
 
 
