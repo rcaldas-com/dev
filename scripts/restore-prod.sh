@@ -216,7 +216,7 @@ if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
                     echo 'Falha na conexão com S3 local'
                     exit 1
                 fi
-            " >/dev/null 2>&1 \
+            " >/dev/null \
             && log "✅ Restore S3 concluído" \
             || warn "⚠️  Falha no restore S3 (dados MongoDB restaurados com sucesso)"
     else
