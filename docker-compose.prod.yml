@@ -1,10 +1,19 @@
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:2.2
+    image: registry.rcaldas.com/rcaldas/web:2.7
     restart: unless-stopped
     ports:
       - "8611:3000"
     env_file: .env
+    environment:
+      - HOSTNAME=0.0.0.0
+    networks:
+      - default
+      - mailu_default
+    volumes:
+      - /var/rcaldas/live/home:/var/rcaldas/live/home:ro
+      - /var/rcaldas/live/bin:/var/rcaldas/live/bin:ro
+      - /var/zxnet/.ssh/pending-keys:/var/zxnet/.ssh/pending-keys
     deploy:
       resources:
         limits:
@@ -14,7 +23,7 @@ services:
     depends_on:
       - redis
   wallet:
-    image: registry.rcaldas.com/rcaldas/wallet:1.4
+    image: registry.rcaldas.com/rcaldas/wallet:1.5
     restart: unless-stopped
     ports:
       - "8613:3000"
@@ -46,7 +55,7 @@ services:
         reservations:
           memory: 64M
   emailer:
-    image: registry.rcaldas.com/rcaldas/emailer:1.4
+    image: registry.rcaldas.com/rcaldas/emailer:1.5
     restart: unless-stopped
     env_file: .env
     volumes:
