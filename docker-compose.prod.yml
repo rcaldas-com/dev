@@ -1,6 +1,6 @@
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:2.7
+    image: registry.rcaldas.com/rcaldas/web:2.9
     restart: unless-stopped
     ports:
       - "8611:3000"
