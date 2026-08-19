@@ -206,12 +206,7 @@ if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
             --entrypoint /bin/sh minio/mc:latest -c "
                 mc alias set local '$S3_URL' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET'
                 if mc ls local/ >/dev/null 2>&1; then
-                    echo 'Limpando S3 local...'
-                    mc ls local 2>/dev/null | awk '{print \$NF}' | sed 's|/$||' | while read bucket; do
-                        [ -n \"\$bucket\" ] && mc rm --recursive --force local/\$bucket/ 2>/dev/null || true
-                        [ -n \"\$bucket\" ] && mc rb local/\$bucket/ 2>/dev/null || true
-                    done
-                    mc mirror /data/ local/ --quiet && echo 'Restore S3 concluído' || echo 'Falha no restore S3'
+                    mc mirror /data/ local/ --overwrite --remove --quiet && echo 'Restore S3 concluído' || echo 'Falha no restore S3'
                 else
                     echo 'Falha na conexão com S3 local'
                     exit 1
