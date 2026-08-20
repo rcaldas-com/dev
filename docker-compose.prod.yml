@@ -13,6 +13,7 @@ services:
     volumes:
       - /var/rcaldas/live/home:/var/rcaldas/live/home:ro
       - /var/rcaldas/live/bin:/var/rcaldas/live/bin:ro
+      - /var/rcaldas/live/upload:/var/rcaldas/live/upload
       - /var/zxnet/.ssh/pending-keys:/var/zxnet/.ssh/pending-keys
     deploy:
       resources:
