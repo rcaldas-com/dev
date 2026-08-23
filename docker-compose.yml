@@ -65,12 +65,9 @@ services:
       AUTH_TRUST_HOST: http://localhost:8009
       TITLE: Car
       DESCRIPTION: Controle de manutencoes
-      TEMPLATE_PREFIX: car
-      # Redis compartilhado, keyspace separado. O emailer le a fila
-      # "email:send" com nome FIXO no codigo (nao e' configuravel por env),
-      # entao sem DBs distintos os dois workers disputariam a mesma fila e
-      # metade dos emails sairia com o logo/URL do app errado.
-      REDIS_URL: redis://redis:6379/1
+      # Sem TEMPLATE_PREFIX aqui: o prefixo agora vai no payload da mensagem
+      # (app/lib/email.ts), nao no ambiente. Deixar a variavel sobrando so'
+      # criaria a duvida de qual das duas manda.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -86,23 +83,6 @@ services:
     depends_on:
       - mongo
       - redis
-  # Segundo worker de email, e nao um so' compartilhado: o emailer monta a
-  # URL do logo a partir do proprio AUTH_TRUST_HOST, em tempo de start --
-  # nao vem no payload da mensagem. Um container so' nao consegue servir os
-  # dois apps sem mudar o emailer. Custa 64MB; nao vale a mudanca hoje.
-  car-emailer:
-    build: ./emailer
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      AUTH_TRUST_HOST: http://localhost:8009
-      TEMPLATE_PREFIX: car
-      REDIS_URL: redis://redis:6379/1
-    depends_on:
-      - redis
-    volumes:
-      - ./emailer/app.py:/app/app.py
-      - ./emailer/templates:/app/templates
   # Site estatico. Em dev roda `next dev` normal (Dockerfile.dev); o
   # output: 'export' so' aparece no build de producao.
   site:

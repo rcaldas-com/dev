@@ -21,11 +21,9 @@ AUTH_SECRET=
 MONGO_URI=mongodb://user:password@mongo/rcaldas?authSource=admin
 
 # ═══════════════ Redis (fila de emails do emailer) ═══════════════
-# Sem número de DB no fim = DB 0. O `car` e o `car-emailer` sobrescrevem
-# para `redis://redis:6379/1` no compose: o emailer lê a fila "email:send"
-# com nome FIXO no código, então os dois workers precisam de keyspaces
-# separados — senão disputam a mesma fila e metade dos emails sai com o
-# logo e a URL do app errado.
+# Uma fila só para todos os apps. A identidade de cada um (nome, URL do
+# logo, conjunto de templates) viaja no payload da mensagem, não no
+# ambiente do worker — por isso um emailer atende web, car e wallet.
 REDIS_URL=redis://redis:6379
 
 # ═══════════════ S3 / MinIO (usado pelo car e pelo wallet) ═══════════════
