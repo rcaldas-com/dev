@@ -225,7 +225,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          # 192 e nao 128: no primeiro start o Alloy le os 7 dias que ja
+          # estao em disco de uma vez (243k linhas medidas no us) e bateu
+          # 117MB nesse pico -- 91% de um teto de 128M, sem margem nenhuma.
+          # Em regime ele fica em ~89MB.
+          memory: 192M
         reservations:
           memory: 32M
     depends_on:
@@ -253,10 +257,11 @@ services:
     deploy:
       resources:
         limits:
-          # 384 e nao 256: medido em teste local, o Grafana 13 fica em ~222MB
-          # so' de ocioso. Com teto de 256 sobrava folga de 34MB e a primeira
-          # consulta pesada derrubaria o container.
-          memory: 384M
+          # 512 e nao 256/384: o Grafana 13 fica em ~310MB so' de ocioso no
+          # us (222MB em teste local numa maquina maior). Com teto de 384
+          # isso e' 80% em regime, folga pequena demais pra aguentar uma
+          # consulta pesada sem levar OOM.
+          memory: 512M
         reservations:
           memory: 64M
     depends_on:
