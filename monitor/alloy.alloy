@@ -1,0 +1,99 @@
+// Coletor de log: le os arquivos que o rsyslog do us JA escreve e empurra
+// pro Loki. Nada do lado do rsyslog muda por causa disto.
+//
+// E' o Alloy, e nao o Promtail, porque o Promtail chegou ao fim de vida em
+// 02/03/2026 -- sem suporte e sem desenvolvimento. Mesmo papel, mesma
+// arquitetura, so' o binario e a sintaxe da config mudam.
+
+// Um alvo por arquivo. O glob pega tanto os servicos do us
+// (/var/log/remote/us/{web,car,wallet,ccxt,emailer}.log) quanto o syslog de
+// host da frota (/var/log/remote/{bag,lev,tp}/syslog.log) -- que hoje e a
+// maior parte do volume.
+//
+// `*.log` NAO casa com os rotacionados (`syslog.log.1`, `syslog.log.2.gz`),
+// que e' o comportamento certo: eles ja foram lidos enquanto eram o arquivo
+// corrente. Incluir os .1/.gz reingeriria tudo duplicado a cada rotacao.
+local.file_match "remote" {
+  path_targets = [{ __path__ = "/var/log/remote/*/*.log" }]
+  sync_period  = "30s"
+}
+
+// Host e servico saem do CAMINHO, no momento da descoberta -- nao do
+// conteudo da linha. Motivo: o driver syslog do Docker fixa o HOSTNAME em
+// "localhost" pra todo container (testado na sessao passada, `--hostname`
+// nao muda), entao a linha nao sabe de quem ela e. O caminho sabe.
+discovery.relabel "remote" {
+  targets = local.file_match.remote.targets
+
+  rule {
+    source_labels = ["__path__"]
+    regex         = "/var/log/remote/([^/]+)/[^/]+\\.log"
+    target_label  = "host"
+  }
+
+  // Nos servicos do us o basename ja e o nome do servico (a tag do
+  // log-opt). Nos hosts da frota e sempre "syslog".
+  rule {
+    source_labels = ["__path__"]
+    regex         = "/var/log/remote/[^/]+/([^/]+)\\.log"
+    target_label  = "service"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "remote-logs"
+  }
+}
+
+loki.source.file "remote" {
+  targets    = discovery.relabel.remote.output
+  forward_to = [loki.process.syslog.receiver]
+  // false = le do comeco do arquivo na primeira vez, trazendo os 7 dias que
+  // ja estao em disco. Depois disso o arquivo de posicoes (em volume
+  // nomeado, /var/lib/alloy/data) manda -- sem ele, todo restart
+  // reingeriria tudo e duplicaria linha no Loki.
+  tail_from_end = false
+}
+
+loki.process "syslog" {
+  // Formato BSD do rsyslog: "Aug 23 05:48:39 localhost web[728783]: msg".
+  // Linha que nao casar passa adiante intacta (os stages abaixo viram
+  // no-op) -- e' o que queremos pra continuacao de stack trace.
+  stage.regex {
+    expression = "^(?P<ts>[A-Z][a-z]{2}\\s+\\d{1,2} \\d{2}:\\d{2}:\\d{2}) \\S+ (?P<programname>[^\\[:]+)(\\[(?P<pid>\\d+)\\])?: ?(?P<msg>.*)$"
+  }
+
+  // ATENCAO: o formato BSD nao tem ano NEM timezone, e o us roda em -03.
+  // Sem `location` explicito o Go assume UTC e todo o log fica 3h deslocado
+  // -- em silencio, sem erro nenhum. Validado com a linha crua na subida.
+  stage.timestamp {
+    source   = "ts"
+    format   = "Jan _2 15:04:05"
+    location = "America/Sao_Paulo"
+  }
+
+  // programname/pid como structured metadata, NUNCA como label: label no
+  // Loki vira stream, e pid muda a cada restart de container. Isso e o
+  // caminho classico pra explosao de cardinalidade que mata um Loki.
+  stage.structured_metadata {
+    values = {
+      programname = "",
+      pid         = "",
+    }
+  }
+
+  // Guarda so a mensagem, sem o prefixo syslog. Nada se perde: o timestamp
+  // vira o timestamp da entrada, host/service viram label, programname/pid
+  // viram metadata -- e o arquivo cru continua em disco por 7 dias.
+  stage.output {
+    source = "msg"
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

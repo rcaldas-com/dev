@@ -1,0 +1,85 @@
+# Loki monolitico (-target=all): um processo so, sem microservicos, sem
+# object store externo. O volume de log da frota inteira e ~12MB/dia -- as
+# 81MB de 7 dias medidas em 23/08/2026 cabem inteiras em memoria se a gente
+# quisesse. Escalar isso pra um deploy distribuido seria puro custo.
+#
+# O Loki e ADITIVO: nao substitui /var/log/remote/*.log nem o logrotate de
+# 7 dias. Os arquivos seguem sendo a fonte bruta; isto aqui e o indice
+# pesquisavel e o historico longo (90 dias).
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  # info tagarela demais pro volume que temos -- uma linha de log do Loki
+  # por push seria mais log que o log coletado.
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # v13 + tsdb e o que habilita structured metadata (usado pra guardar
+    # programname/pid sem virar label -- ver monitor/alloy.alloy).
+    - from: 2026-08-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/tsdb-cache
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  retention_period: 2160h   # 90 dias -- ver compactor abaixo
+  # O Alloy le os arquivos DO COMECO na primeira subida, entao o backfill
+  # traz ate 7 dias de historico ja em disco. Com o default (168h = 7d) as
+  # linhas mais antigas cairiam exatamente na borda e seriam rejeitadas.
+  # Manter a rejeicao LIGADA (so' com janela maior) e' de proposito: se o
+  # parse de timestamp quebrar e as linhas virarem ano 0, o erro aparece no
+  # log do Alloy em vez de corromper a base em silencio.
+  reject_old_samples: true
+  reject_old_samples_max_age: 336h   # 14 dias
+  # Habilita a API de volume, que e o que faz o Grafana mostrar estatistica
+  # de label no Explore em vez de uma tela vazia.
+  volume_enabled: true
+
+compactor:
+  working_directory: /loki/compactor
+  # Sem retention_enabled o retention_period acima e IGNORADO e a base
+  # cresce pra sempre. E com ele ligado o delete_request_store passa a ser
+  # obrigatorio no Loki 3.x -- sem essa linha o processo nem sobe.
+  retention_enabled: true
+  delete_request_store: filesystem
+  compaction_interval: 10m
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-tmp
+  ring:
+    kvstore:
+      store: inmemory
+  enable_api: true
+
+# Telemetria pra Grafana Labs, ligada por padrao. Nao ha motivo.
+analytics:
+  reporting_enabled: false

@@ -60,6 +60,13 @@ SMTP_PORT=587
 SMTP_USER=
 SMTP_PASS=
 
+# ═══════════════ Log centralizado (Grafana) ═══════════════
+# Senha do admin do Grafana em logs.rcaldas.com. É a única credencial da
+# stack de log — Loki e Alloy não são expostos. O compose falha na subida
+# se estiver vazia, de propósito: Grafana sem senha definida cai no
+# admin/admin padrão, e isso ficaria na internet atrás da Cloudflare.
+GF_SECURITY_ADMIN_PASSWORD=
+
 # ═══════════════ Ambiente ═══════════════
 NODE_ENV=development
 NEXT_TELEMETRY_DISABLED=1

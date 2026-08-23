@@ -9,8 +9,8 @@
 # produz a imagem certa, e quem paga o -f e' o dev, onde o erro aparece na
 # hora.
 #
-# emailer e monitor-worker nao tem .dev: o mesmo Dockerfile serve os dois
-# ambientes. Criar um par identico so' pra uniformizar seria duplicacao.
+# o emailer nao tem .dev: o mesmo Dockerfile serve os dois ambientes. Criar
+# um par identico so' pra uniformizar seria duplicacao.
 services:
   nginx:
     image: nginx:latest
