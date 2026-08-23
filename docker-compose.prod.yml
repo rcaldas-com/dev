@@ -8,7 +8,7 @@
 # divergir -- conferido comparando o env real dos containers, var por var.
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:2.9
+    image: registry.rcaldas.com/rcaldas/web:2.11
     restart: unless-stopped
     ports:
       - "8611:3000"
@@ -32,7 +32,7 @@ services:
     depends_on:
       - redis
   car:
-    image: registry.rcaldas.com/rcaldas/car:3.4
+    image: registry.rcaldas.com/rcaldas/car:3.5
     restart: unless-stopped
     ports:
       - "8612:3000"
@@ -61,7 +61,7 @@ services:
         reservations:
           memory: 16M
   wallet:
-    image: registry.rcaldas.com/rcaldas/wallet:1.5
+    image: registry.rcaldas.com/rcaldas/wallet:1.6
     restart: unless-stopped
     ports:
       - "8613:3000"
