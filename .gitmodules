@@ -14,3 +14,7 @@
 	path = car
 	url = https://github.com/rcaldas-com/car-web.git
 	branch = main
+[submodule "site"]
+	path = site
+	url = https://github.com/rcaldas-com/site.git
+	branch = main
