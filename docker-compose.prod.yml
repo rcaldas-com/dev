@@ -23,6 +23,12 @@ services:
       - /var/rcaldas/live/bin:/var/rcaldas/live/bin:ro
       - /var/rcaldas/live/upload:/var/rcaldas/live/upload
       - /var/zxnet/.ssh/pending-keys:/var/zxnet/.ssh/pending-keys
+    # Ver explicação completa no bloco `wallet` abaixo.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "web"
     deploy:
       resources:
         limits:
@@ -41,6 +47,12 @@ services:
       - AUTH_TRUST_HOST=https://car.rcaldas.com
       - TITLE=Car App
       - DESCRIPTION=Controle de veículos e manutenção automotiva.
+    # Ver explicação completa no bloco `wallet` abaixo.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "car"
     deploy:
       resources:
         limits:
@@ -98,6 +110,12 @@ services:
       # aqui. Reavaliar quando migrar de região.
       CCXT_EXCHANGES: okx,binance,kraken
       CCXT_CACHE_TTL: "10"
+    # Ver explicação completa no bloco `wallet` acima.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "ccxt"
     deploy:
       resources:
         limits:
@@ -127,6 +145,12 @@ services:
     networks:
       - default
       - mailu_default
+    # Ver explicação completa no bloco `wallet` acima.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "emailer"
     deploy:
       # replicas: 3   # descomente se a fila comecar a acumular
       resources:
