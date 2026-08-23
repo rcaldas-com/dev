@@ -66,6 +66,18 @@ services:
     ports:
       - "8613:3000"
     env_file: .env
+    # Logs deste servico no coletor central do proprio us (ver
+    # /etc/rsyslog.d/05-docker-services.conf) -- ate agora so tinhamos
+    # heartbeat de host (CPU/disco/memoria), nenhum log de aplicacao. O
+    # driver syslog do Docker fixa HOSTNAME="localhost" (nao da pra trocar),
+    # entao quem separa por servico e' a tag: cai em
+    # /var/log/remote/us/wallet.log, retencao de 7 dias pelo mesmo
+    # logrotate que ja cobre o resto da frota.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "wallet"
     deploy:
       resources:
         limits:
