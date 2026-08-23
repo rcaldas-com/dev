@@ -167,9 +167,36 @@ e isso ficaria na internet.
    Incluí-los reingeriria tudo duplicado a cada rotação. Testado com um
    rename simulando o logrotate: a linha do arquivo novo chegou, o `.1` não
    virou target.
-7. **Sem swap.** Os limites de memória no compose não são decorativos. O do
-   Grafana é 384M e não 256M porque ele fica em ~222MB só de ocioso —
-   34MB de folga e a primeira consulta pesada derrubaria o container.
+7. **Sem swap.** Os limites de memória no compose não são decorativos, e os
+   números do teste local ficaram curtos na máquina real: o Grafana foi pra
+   512M (fica em ~310MB de ocioso no `us`, contra 222MB local) e o Alloy pra
+   192M (bateu 117MB no backfill inicial, 91% de um teto de 128M).
+8. **`GOMEMLIMIT` no Alloy.** O GC do Go **não enxerga o limite do cgroup**:
+   o Alloy assentou em 165MB de um teto de 192M (86%) e não descia — ele
+   cresce o heap até o container morrer. Com `GOMEMLIMIT=150MiB` o GC aperta
+   ao se aproximar em vez de estourar, e ele caiu pra ~53MB em regime. Sem
+   swap no host, isso protege a caixa inteira, não só o container.
+9. **Hostname novo exige certificado.** Só criar o registro na Cloudflare e o
+   backend no HAProxy dá **526** (a Cloudflare não valida o cert da origem).
+   Emitir com
+   `certbot certonly --standalone --preferred-challenges http --http-01-address 45.56.114.108 --http-01-port 8889 -d <host>`
+   e depois rodar `/var/rcaldas/live/haproxy/renew_certbot.sh`, que concatena
+   `privkey+fullchain` de cada dir de `/etc/letsencrypt/live/` em
+   `live/haproxy/certs/<host>.pem` e recarrega o HAProxy.
+
+### Números reais em produção (23/08/2026, logo após subir)
+
+| | valor |
+|---|---|
+| linhas indexadas (backfill de 7 dias) | 282.208 |
+| disco do Loki pra esses 7 dias | **3,0MB** (contra 81MB de log cru) |
+| projeção pros 90 dias de retenção | ~40MB |
+| memória em regime | alloy 53MB, loki 81MB, grafana 212MB (~347MB) |
+| cobertura | hosts `us`/`bag`/`lev`/`tp`; serviços `web`/`car`/`wallet`/`ccxt`/`emailer` + `syslog` |
+
+A compressão do Loki é o número que surpreende: 81MB de log cru viram 3MB
+indexados. O medo inicial de disco (`/var` apertado) não se aplica — dava
+pra guardar bem mais que 90 dias se quisesse.
 
 ### `monitor-worker` removido
 
