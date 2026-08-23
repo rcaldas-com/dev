@@ -218,6 +218,12 @@ services:
       - --server.http.listen-addr=0.0.0.0:12345
     ports:
       - "127.0.0.1:12345:12345"
+    environment:
+      # O GC do Go nao enxerga o limite do cgroup: ele cresce o heap ate o
+      # container morrer, e sem swap no host isso e' OOM de verdade. Com
+      # GOMEMLIMIT o GC fica agressivo ao se aproximar em vez de estourar.
+      # 150MiB deixa ~42MB de folga pro que nao e' heap dentro dos 192M.
+      - GOMEMLIMIT=150MiB
     volumes:
       - ./monitor/alloy.alloy:/etc/alloy/config.alloy:ro
       - /var/log/remote:/var/log/remote:ro
