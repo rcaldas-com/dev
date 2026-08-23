@@ -62,7 +62,7 @@ services:
     depends_on:
       - redis
   site:
-    image: registry.rcaldas.com/rcaldas/site:0.1
+    image: registry.rcaldas.com/rcaldas/site:0.2
     restart: unless-stopped
     ports:
       - "8615:80"   # 8614 ja e' o rcaldas-static
@@ -100,7 +100,7 @@ services:
       - redis
       - ccxt
   ccxt:
-    image: registry.rcaldas.com/rcaldas/ccxt:1.1
+    image: registry.rcaldas.com/rcaldas/ccxt:1.2
     restart: unless-stopped
     environment:
       # OKX primeiro (maior volume que Kraken); Binance em segundo — o VPS
