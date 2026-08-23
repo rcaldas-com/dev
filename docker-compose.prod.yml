@@ -227,6 +227,16 @@ services:
     volumes:
       - ./monitor/alloy.alloy:/etc/alloy/config.alloy:ro
       - /var/log/remote:/var/log/remote:ro
+      # Journal do proprio us: e' onde vivem as mensagens de kernel
+      # (nftables/LIMBO), que o rsyslog perdeu pro journald. Ver o
+      # comentario longo em monitor/alloy.alloy.
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      # /var/log inteiro num ponto SEPARADO, so' pra alcancar o
+      # fail2ban.log. Nao reaproveita o mount de /var/log/remote acima de
+      # proposito: mudar o caminho de um alvo ja lido zera as posicoes e
+      # reingere tudo duplicado. Os globs nao se cruzam.
+      - /var/log:/hostlogs:ro
       - alloy-data:/var/lib/alloy/data
     deploy:
       resources:

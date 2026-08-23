@@ -92,6 +92,103 @@ loki.process "syslog" {
   forward_to = [loki.write.default.receiver]
 }
 
+// ---------------------------------------------------------------------
+// Journal do proprio `us`
+//
+// Os hosts da frota mandam o syslog deles pelo tunel, mas o `us` e' o
+// coletor e nunca mandou pra si mesmo -- o host que motivou o projeto era
+// justamente o unico fora do viewer.
+//
+// A fonte e' o JOURNAL, nao os arquivos do rsyslog, por um motivo medido:
+// o rsyslog perdeu o kernel pro journald. As mensagens do nftables
+// (`log prefix "LIMBO: "`) existem so' no ring buffer e no journal --
+// `grep LIMBO` da ZERO em /var/log/{kern.log,syslog,messages}, e o
+// kern.log parou de ser escrito. No journal sao 14.401 linhas em 24h.
+//
+// O journal tambem e' superconjunto dos arquivos em tudo o mais: sshd
+// 963 linhas no journal contra 0 no syslog (auth e' excluida de la por
+// padrao no Debian), CRON 4.896 contra 1.143, mailu-front 16.300 contra
+// 11.373. Uma fonte so', sem duplicar nada.
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "host"
+  }
+
+  // 31 identificadores distintos em 24h (haproxy, mailu-front, kernel,
+  // CRON, sshd-session, ...) -- contado antes de adotar como label. Nessa
+  // ordem de grandeza e' seguro; se um dia virar centenas, revisar, porque
+  // label no Loki e' stream.
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "service"
+  }
+
+  rule {
+    target_label = "job"
+    replacement  = "host-journal"
+  }
+}
+
+loki.source.journal "us" {
+  path = "/var/log/journal"
+  // Teto na primeira leitura. O journal do us esta em ~988MB (no proprio
+  // limite do SystemMaxUse=1G): sem isto o primeiro start tentaria ingerir
+  // tudo de uma vez e estouraria a memoria do container.
+  max_age       = "24h"
+  relabel_rules = loki.relabel.journal.rules
+  forward_to    = [loki.write.default.receiver]
+}
+
+// ---------------------------------------------------------------------
+// fail2ban: unico que NAO esta no journal (escreve so' no arquivo dele --
+// 12.866 linhas hoje contra 0 no journal). E' a fonte mais direta de
+// "quem esta atacando": IP, jail e ban/unban ja estruturados.
+local.file_match "fail2ban" {
+  path_targets = [{
+    __path__ = "/hostlogs/fail2ban.log",
+    host     = "us",
+    service  = "fail2ban",
+    job      = "host-files",
+  }]
+  sync_period = "30s"
+}
+
+loki.source.file "fail2ban" {
+  targets    = local.file_match.fail2ban.targets
+  forward_to = [loki.process.fail2ban.receiver]
+}
+
+loki.process "fail2ban" {
+  // Formato proprio, diferente do syslog BSD: tem ano e milissegundo
+  // separado por virgula. Ex:
+  // 2026-08-23 17:03:11,123 fail2ban.actions [1234]: NOTICE [sshd] Ban 1.2.3.4
+  stage.regex {
+    expression = "^(?P<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}),\\d+ (?P<component>\\S+)\\s*\\[\\d+\\]: (?P<level>[A-Z]+)\\s+(?P<msg>.*)$"
+  }
+
+  stage.timestamp {
+    source   = "ts"
+    format   = "2006-01-02 15:04:05"
+    location = "America/Sao_Paulo"
+  }
+
+  stage.structured_metadata {
+    values = {
+      component = "",
+      level     = "",
+    }
+  }
+
+  stage.output {
+    source = "msg"
+  }
+
+  forward_to = [loki.write.default.receiver]
+}
+
 loki.write "default" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
