@@ -10,3 +10,7 @@
 	path = emailer
 	url = https://github.com/rcaldas-com/mailer.git
 	branch = main
+[submodule "car"]
+	path = car
+	url = https://github.com/rcaldas-com/car-web.git
+	branch = main

@@ -6,10 +6,14 @@ DESCRIPTION=Serviços Web, Blockchain e Segurança
 # Dev: http://localhost:8001 · Produção: https://seu-dominio
 AUTH_TRUST_HOST=http://localhost:8001
 
+# TITLE, DESCRIPTION e AUTH_TRUST_HOST acima valem para o `web`. O `car` roda
+# no mesmo .env e sobrescreve os três em `environment:` no compose — são os
+# únicos valores que precisam divergir entre os apps.
+
 # ═══════════════ Sessão ═══════════════
-# DEVE ser idêntico ao AUTH_SECRET do projeto car: o cookie de sessão `userId`
-# é assinado (JWT) com este segredo e compartilhado entre os apps.
-# Valores diferentes quebram o login único.
+# Um segredo só para toda a stack: o cookie de sessão `userId` é assinado
+# (JWT) com ele e compartilhado entre web, wallet e car. Valores diferentes
+# quebram o login único.
 # Gere com: openssl rand -base64 48
 AUTH_SECRET=
 
@@ -17,7 +21,18 @@ AUTH_SECRET=
 MONGO_URI=mongodb://user:password@mongo/rcaldas?authSource=admin
 
 # ═══════════════ Redis (fila de emails do emailer) ═══════════════
+# Sem número de DB no fim = DB 0. O `car` e o `car-emailer` sobrescrevem
+# para `redis://redis:6379/1` no compose: o emailer lê a fila "email:send"
+# com nome FIXO no código, então os dois workers precisam de keyspaces
+# separados — senão disputam a mesma fila e metade dos emails sai com o
+# logo e a URL do app errado.
 REDIS_URL=redis://redis:6379
+
+# ═══════════════ S3 / MinIO (usado pelo car e pelo wallet) ═══════════════
+# Dev: o MinIO do próprio compose. Produção: gateway S3 externo.
+S3_HOST=http://minio:9000
+S3_KEY=root
+S3_SECRET=password
 
 # ═══════════════ Wallet / Stellar ═══════════════
 # Secret da conta que financia contas novas e recargas de reserva.

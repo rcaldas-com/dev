@@ -3,12 +3,14 @@ services:
     image: nginx:latest
     restart: unless-stopped
     ports:
-      - 8001:80
+      - 8001:80   # rcaldas: web (/) + wallet (/wallet)
+      - 8009:81   # car -- mesma porta que o stack antigo do car-dev usava
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - web
       - wallet
+      - car
   web:
     build: web/
     restart: unless-stopped
@@ -47,6 +49,75 @@ services:
       - mongo
       - redis
       - ccxt
+  # car veio do stack proprio (repo car-dev) pra ca. O ganho e' parar de
+  # subir um segundo mongo/redis/minio no host de desenvolvimento -- o car
+  # sempre usou o MESMO banco e o MESMO cookie de sessao que o web
+  # (AUTH_SECRET e MONGO_URI identicos, conferido em producao), entao
+  # compartilhar a infra e' reconhecer o que ja era, nao uma mudanca.
+  car:
+    build: car/
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # O .env e' um so' pra stack inteira. Estes sao os UNICOS valores que
+      # precisam divergir entre os apps -- conferido comparando o env real
+      # dos containers em producao, var por var.
+      AUTH_TRUST_HOST: http://localhost:8009
+      TITLE: Car
+      DESCRIPTION: Controle de manutencoes
+      TEMPLATE_PREFIX: car
+      # Redis compartilhado, keyspace separado. O emailer le a fila
+      # "email:send" com nome FIXO no codigo (nao e' configuravel por env),
+      # entao sem DBs distintos os dois workers disputariam a mesma fila e
+      # metade dos emails sairia com o logo/URL do app errado.
+      REDIS_URL: redis://redis:6379/1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./car/app:/app/app
+      - ./car/public:/app/public
+      - ./car/scripts:/app/scripts
+      - ./car/middleware.ts:/app/middleware.ts
+      - ./car/tailwind.config.ts:/app/tailwind.config.ts
+      - ./car/package.json:/app/package.json
+      - ./car/package-lock.json:/app/package-lock.json
+      - ./car/next.config.js:/app/next.config.js
+      - ./car/tsconfig.json:/app/tsconfig.json
+    depends_on:
+      - mongo
+      - redis
+  # Segundo worker de email, e nao um so' compartilhado: o emailer monta a
+  # URL do logo a partir do proprio AUTH_TRUST_HOST, em tempo de start --
+  # nao vem no payload da mensagem. Um container so' nao consegue servir os
+  # dois apps sem mudar o emailer. Custa 64MB; nao vale a mudanca hoje.
+  car-emailer:
+    build: ./emailer
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      AUTH_TRUST_HOST: http://localhost:8009
+      TEMPLATE_PREFIX: car
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      - redis
+    volumes:
+      - ./emailer/app.py:/app/app.py
+      - ./emailer/templates:/app/templates
+  # Site estatico. Em dev roda `next dev` normal (Dockerfile.dev); o
+  # output: 'export' so' aparece no build de producao.
+  site:
+    build:
+      context: site/
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    ports:
+      - 8002:3000
+    volumes:
+      - ./site/app:/app/app
+      - ./site/public:/app/public
+      - ./site/next.config.js:/app/next.config.js
+      - ./site/package.json:/app/package.json
+      - ./site/package-lock.json:/app/package-lock.json
   ccxt:
     build: ./ccxt
     restart: unless-stopped
