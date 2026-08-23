@@ -207,6 +207,89 @@ Host-down é detectado por uma varredura que pega carona no heartbeat de
 qualquer host, com trava no Redis (`monitor:offline-sweep`), abrindo
 incidente após 5 min sem heartbeat.
 
+## Pendências levantadas na Sessão 2 (não implementadas)
+
+### P0 — `bag`: disco `sdb` falhando no pool `tank`
+
+Descoberto ao responder "tem mensagem de ZFS nos logs?". **Não é hipótese**:
+
+```
+pool: tank / raidz1-0 (sdc, sda, sdb) -- ONLINE mas:
+  sdb   ONLINE   READ 6   CKSUM 2
+status: One or more devices has experienced an unrecoverable error.
+action: Determine if the device needs to be replaced
+scan: resilvered 260M in 00:00:30 on Thu Aug 20 12:07:00 2026
+```
+
+Não é histórico: o Loki tem **7 eventos de `class=io ... err=5`** (erro de
+I/O de verdade, não só checksum) em `sdb1` em **23/08 às 04:00**, hoje. O
+disco está errando agora.
+
+Agravantes:
+- **`raidz1` = paridade simples.** Um disco já errando; se ele sair e outro
+  tiver setor latente durante o rebuild, perde dado.
+- Os três são **HDD de notebook 5400rpm de consumo** (`TOSHIBA MQ01ABD050`,
+  `ST9500325AS`, `HGST HTS545050A7E680`), todos 465,8G.
+- **`smartmontools` não está instalado** — zero visibilidade de SMART.
+- O `zed` está ativo e **avisaria** (`ZED_EMAIL_ADDR=rclgsm@gmail.com`), mas
+  o `bag` **não tem MTA** (`sendmail` e `postfix` ausentes; só `mail`/`mailx`
+  sem transporte). O aviso nunca saiu da máquina — por isso passou batido
+  desde 20/08.
+
+### P1 — o syslog do próprio `us` não está no Loki
+
+Os hosts da frota (`bag`/`lev`/`tp`) mandam o syslog deles pelo túnel, mas o
+`us` é o coletor e **nunca manda pra si mesmo**. Resultado: `/var/log/syslog`
+do `us` (3,2MB, ~20k linhas) está fora do viewer — justo o host que motivou
+o projeto.
+
+O que fica invisível: `mailu-front` (**10.712 linhas**, o maior falador de
+longe), `sshd`, `fail2ban` (9 jails ativas), `kernel`, `dockerd`, `CRON`.
+
+Conserto provável: uma regra de `omfile`/`omfwd` local no rsyslog do `us`
+escrevendo em `/var/log/remote/us/syslog.log` — cai no glob que o Alloy já
+lê, sem tocar em nada mais. **Cuidado**: o `10-collector.conf` tem um `stop`
+incondicional, e o `05-docker-services.conf` filtra por
+`$inputname == "imtcp"`; a regra nova precisa não colidir com nenhum dos
+dois nem criar laço de realimentação.
+
+### P2 — visibilidade de atacante: ainda não existe
+
+Resposta honesta pra "já dá pra ver padrões e portas usadas pelos
+atacantes?": **ainda não**, por dois motivos independentes.
+
+1. O syslog do `us` está fora do Loki (P1). Sem isso, nem `sshd` nem
+   `fail2ban` nem `mailu-front` são pesquisáveis.
+2. **A regra de log do nftables não produz nada hoje.** Ela existe
+   (`limit rate 10/minute burst 5 packets log prefix "LIMBO: "`), mas o
+   `grep LIMBO` dá **0** em `syslog`, `syslog.1`, `messages` e `messages.1`.
+   O rate limit resolveu o flood que motivou tudo — só que resolveu pra
+   zero. As "50 linhas de firewall" que aparecem num grep ingênuo são
+   `systemd` falando de `nftables.service`, não pacote dropado.
+
+Ou seja: pra ter dado de scan/porta é preciso **decidir voltar a logar** e
+calibrar o limite (o motivo original de desligar foi encher o disco), ou
+tirar o sinal de outra fonte. A fonte mais rica que **já existe** é o
+`fail2ban.log` (IP, jail, ban/unban) — é o "quem está atacando" pronto,
+sem custo de disco novo.
+
+### P3 — ZFS: o que o log dá e o que não dá
+
+Medido, não suposto. Em 24h no `bag` o filtro `/zfs|zed|scrub/i` traz 153
+linhas, e **todas são ruído**: `zfs-auto-snap` (81) e `CRON` (66) de
+snapshot, mais 3 `systemd` e 3 `sshd` (esses últimos casaram por causa de um
+usuário chamado `zedooo` numa tentativa de invasão — falso positivo puro).
+
+- **Evento**: sim, chega naturalmente. O `zed` escreve
+  `class=checksum`/`class=io` no syslog e isso **já flui pro coletor** —
+  provado, está no Loki.
+- **Estado**: não, nunca. Saúde do pool, resultado/agenda de scrub, SMART e
+  capacidade **não passam pelo syslog**. Um pool degradando em silêncio não
+  gera linha nenhuma — que é exatamente o caso do `sdb` entre 20/08 e hoje.
+
+Conclusão: log resolve metade. A outra metade quer uma coleta de **estado**,
+periódica.
+
 ## Em aberto — próximos passos possíveis
 
 1. ~~**Ler esses logs em algum lugar útil.**~~ **Feito** — ver a seção
