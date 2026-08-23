@@ -1,3 +1,16 @@
+# Convencao de Dockerfile em toda a stack: `Dockerfile` e' PRODUCAO,
+# `Dockerfile.dev` e' desenvolvimento -- e' por isso que todo build aqui
+# aponta explicitamente pro .dev.
+#
+# O default do Docker e' `Dockerfile`, e o default tem que ser o caminho em
+# que errar custa caro. Era o contrario (Dockerfile.prd pro build de
+# producao): um `docker build -t ...:nova-versao .` sem o -f gerava
+# silenciosamente uma imagem de DEV e publicava. Agora esquecer a flag
+# produz a imagem certa, e quem paga o -f e' o dev, onde o erro aparece na
+# hora.
+#
+# emailer e monitor-worker nao tem .dev: o mesmo Dockerfile serve os dois
+# ambientes. Criar um par identico so' pra uniformizar seria duplicacao.
 services:
   nginx:
     image: nginx:latest
@@ -12,7 +25,9 @@ services:
       - wallet
       - car
   web:
-    build: web/
+    build:
+      context: web/
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file: .env
     extra_hosts:
@@ -29,7 +44,9 @@ services:
       - mongo
       - redis
   wallet:
-    build: wallet/
+    build:
+      context: wallet/
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file: .env
     extra_hosts:
@@ -55,7 +72,9 @@ services:
   # (AUTH_SECRET e MONGO_URI identicos, conferido em producao), entao
   # compartilhar a infra e' reconhecer o que ja era, nao uma mudanca.
   car:
-    build: car/
+    build:
+      context: car/
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     env_file: .env
     environment:
@@ -99,7 +118,9 @@ services:
       - ./site/package.json:/app/package.json
       - ./site/package-lock.json:/app/package-lock.json
   ccxt:
-    build: ./ccxt
+    build:
+      context: ./ccxt
+      dockerfile: Dockerfile.dev
     restart: unless-stopped
     environment:
       # Mesma ordem do prod (docker-compose.prod.yml) — OKX primeiro (maior
