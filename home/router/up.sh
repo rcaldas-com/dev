@@ -23,5 +23,8 @@ echo "Subindo container do dnsmasq (só nesta interface, só DHCP)..."
 cd "$(dirname "$0")"
 docker compose up -d
 
+echo "Aplicando mapeamento de intranet (nftables DNAT, se houver algum)..."
+./intranet-apply.sh
+
 echo
 echo "Pronto. Acompanhe com: ./watch.sh"

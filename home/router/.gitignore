@@ -1,4 +1,5 @@
 leases/
 hosts/hosts.conf
+intranet-map.conf
 *.pcap
 *.log
