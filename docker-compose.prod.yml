@@ -267,6 +267,15 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_ANALYTICS_REPORTING_ENABLED=false
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Alerta por conteudo de log (Fase 2). O Grafana avalia a regra e
+      # manda webhook; quem transforma em incidente e' o app, que ja tem
+      # dedupe, email so' na transicao e teto por host/hora.
+      #
+      # Vai por `${VAR}` no arquivo de provisionamento, entao o valor
+      # precisa existir NO AMBIENTE DO GRAFANA -- nao basta estar no .env
+      # do compose. Este bloco e' o que faz a ponte.
+      - LOG_ALERT_TOKEN=${LOG_ALERT_TOKEN:?defina LOG_ALERT_TOKEN no .env}
+      - MONITOR_WEBHOOK_URL=${MONITOR_WEBHOOK_URL:-https://web.rcaldas.com/api/log-alert}
     volumes:
       - ./monitor/grafana/provisioning:/etc/grafana/provisioning:ro
       # Dashboards versionados em arquivo. Em /etc/grafana e nao dentro de

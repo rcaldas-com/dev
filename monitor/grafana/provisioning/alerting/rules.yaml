@@ -1,0 +1,105 @@
+# Regras de alerta por CONTEUDO de log.
+#
+# A LISTA DE EXCLUSAO NAO E' REFINAMENTO, E' PRE-REQUISITO
+# --------------------------------------------------------
+# Medido no log real antes de escrever isto: no `web.log`, 8 de 22 linhas
+# casam com /error|warn/i -- e as 8 sao ruido de boot do pdfjs, incluindo
+# uma que contem literalmente "Error: Cannot find module '@napi-rs/canvas'".
+# No `emailer.log`, a linha SAUDAVEL e' "Erros: 0", que tambem casa.
+#
+# Sem os `!=` abaixo esta regra dispararia em TODO deploy. Antes de
+# adicionar padrao novo, rode a query no Grafana sobre os ultimos dias e
+# veja quantas vezes ela TERIA disparado.
+#
+# `warn` esta fora do padrao de proposito: no log desta frota ele e' quase
+# todo ruido de inicializacao.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: log
+    folder: RCaldas
+    # De quanto em quanto tempo a regra e' avaliada.
+    interval: 1m
+    rules:
+      - uid: rcaldas-log-erro-sustentado
+        title: Erro sustentado no log
+        condition: limiar
+        # 10 minutos disparando antes de virar alerta. Mesmo espirito do
+        # CONSECUTIVE_BREACHES_REQUIRED=3 que ja existe pra cpu/memoria:
+        # o que interessa e' problema que PERSISTE. O caso que originou o
+        # projeto -- a cotacao BTC falhando -- durou dias; um pico de 1
+        # minuto num deploy nao deve acordar ninguem.
+        for: 10m
+        annotations:
+          summary: '{{ $labels.service }} em {{ $labels.host }} com erro repetido no log'
+          description: Linhas de erro acima do limite por 10 minutos seguidos. Veja o log no Grafana pra saber o que e.
+        labels:
+          severity: warning
+        isPaused: false
+        noDataState: OK
+        # Sem dado = servico calado. Pode ser bom (nao errou) ou pessimo
+        # (morreu), e esta regra nao sabe distinguir -- quem cobre queda e'
+        # o sweepOfflineHosts. Alertar aqui so' geraria falso positivo.
+        execErrState: OK
+        data:
+          - refId: consulta
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: consulta
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              queryType: range
+              expr: >-
+                sum by (host, service) (
+                  count_over_time(
+                    {job=~"remote-logs|host-journal|host-files"}
+                    |~ `(?i)(error|erro|fatal|critical|exception|traceback)`
+                    != `Cannot polyfill`
+                    != `@napi-rs/canvas`
+                    != `Erros: 0`
+                    [5m]
+                  )
+                )
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: reduz
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: reduz
+              type: reduce
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: consulta
+              reducer: last
+              settings:
+                mode: dropNN
+          - refId: limiar
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              refId: limiar
+              type: threshold
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: reduz
+              conditions:
+                - evaluator:
+                    # 10 linhas de erro em 5 minutos. Escolhido pra ficar
+                    # bem acima do ruido de boot medido (8 linhas, uma vez
+                    # por deploy) e bem abaixo de um loop de erro de
+                    # verdade, que produz centenas.
+                    type: gt
+                    params: [10]

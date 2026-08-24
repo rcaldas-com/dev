@@ -67,6 +67,15 @@ SMTP_PASS=
 # admin/admin padrão, e isso ficaria na internet atrás da Cloudflare.
 GF_SECURITY_ADMIN_PASSWORD=
 
+# ═══════════════ Alerta por conteúdo de log (Fase 2) ═══════════════
+# Segredo compartilhado entre o Grafana (que avalia a regra e manda o
+# webhook) e o endpoint /api/log-alert (que abre o incidente). O endpoint
+# escreve em monitor_incidents e dispara email — não pode ficar aberto.
+# O compose falha na subida se estiver vazio, de propósito.
+LOG_ALERT_TOKEN=
+# Só sobrescreva se o app mudar de hostname.
+# MONITOR_WEBHOOK_URL=https://web.rcaldas.com/api/log-alert
+
 # ═══════════════ Ambiente ═══════════════
 NODE_ENV=development
 NEXT_TELEMETRY_DISABLED=1

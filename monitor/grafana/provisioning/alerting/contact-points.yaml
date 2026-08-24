@@ -1,0 +1,40 @@
+# Destino dos alertas de log: o proprio app, que os transforma em
+# incidente em monitor_incidents.
+#
+# Nao manda email daqui de proposito. O app ja tem todo o tratamento que
+# importa -- dedupe por chave, email so' na TRANSICAO (nunca a cada
+# avaliacao), teto de 10 emails por host/hora, assunto estavel pro Gmail
+# agrupar abertura e resolucao na mesma conversa, e o trecho de log no
+# corpo. Mandar email pelos dois caminhos daria dois emails por incidente,
+# com regras de silenciamento diferentes.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: monitor-incidentes
+    receivers:
+      - uid: monitor-webhook
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: ${MONITOR_WEBHOOK_URL}
+          httpMethod: POST
+          # Segredo compartilhado. O endpoint escreve incidente e dispara
+          # email, entao nao pode ficar aberto.
+          authorization_scheme: Bearer
+          authorization_credentials: ${LOG_ALERT_TOKEN}
+
+policies:
+  - orgId: 1
+    receiver: monitor-incidentes
+    group_by: [alertname, host, service]
+    # Agrupa por 30s antes de mandar: uma regra que dispara pra varios
+    # servicos ao mesmo tempo vira UM POST com varios alertas, nao varios
+    # POSTs. O endpoint ja itera sobre `alerts[]`.
+    group_wait: 30s
+    group_interval: 5m
+    # De quanto em quanto tempo REPETE um alerta que continua disparado.
+    # Alto de proposito: quem faz o controle de ruido e' o upsertIncident
+    # do app (que so' notifica na transicao), entao repetir aqui so'
+    # geraria trabalho a toa.
+    repeat_interval: 12h
