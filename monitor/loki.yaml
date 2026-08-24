@@ -60,6 +60,18 @@ limits_config:
   # de label no Explore em vez de uma tela vazia.
   volume_enabled: true
 
+  # O default (500) e' baixo demais pros paineis de firewall: cada porta e
+  # cada IP de origem distinto vira UMA serie na hora da consulta, e em
+  # poucas horas de scan isso passa de 500 facil -- a consulta morre com
+  # "maximum number of series reached" e o painel fica vazio. O `topk` nao
+  # salva, porque o Loki monta todas as series antes de recortar.
+  #
+  # Nao tem a ver com cardinalidade de LABEL (essa continua baixa: host +
+  # service). Estas series so' existem durante a consulta, extraidas por
+  # `| regexp` do texto da linha, e somem depois. Custo e' memoria
+  # momentanea do querier, e o volume aqui e' pequeno.
+  max_query_series: 5000
+
 compactor:
   working_directory: /loki/compactor
   # Sem retention_enabled o retention_period acima e IGNORADO e a base
