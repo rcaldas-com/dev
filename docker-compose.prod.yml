@@ -269,6 +269,13 @@ services:
       - GF_ANALYTICS_CHECK_FOR_UPDATES=false
     volumes:
       - ./monitor/grafana/provisioning:/etc/grafana/provisioning:ro
+      # Dashboards versionados em arquivo. Em /etc/grafana e nao dentro de
+      # /var/lib/grafana de proposito: aquele e' volume nomeado, e montar um
+      # bind dentro de um volume e' aninhamento fragil sem necessidade.
+      # O provider recarrega a cada 30s, entao editar o JSON no repo e dar
+      # pull ja atualiza a tela sem restart. Em compensacao editar pela UI
+      # nao persiste (allowUiUpdates: false) -- o que vale e' o arquivo.
+      - ./monitor/grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     deploy:
       resources:

@@ -6,6 +6,9 @@ apiVersion: 1
 datasources:
   - name: Loki
     type: loki
+    # uid fixo: os dashboards provisionados apontam pra ele por uid. Sem
+    # fixar, o Grafana gera um aleatorio e todo painel sobe quebrado.
+    uid: loki
     access: proxy
     # Nome do servico no compose -- resolve pela rede default da stack.
     url: http://loki:3100

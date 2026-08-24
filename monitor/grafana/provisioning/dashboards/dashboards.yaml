@@ -1,0 +1,17 @@
+# Dashboards versionados em arquivo, junto com o resto da config. Editar
+# pela UI funciona pra experimentar, mas o Grafana sobrescreve na proxima
+# subida -- o que vale e' o JSON em monitor/grafana/dashboards/.
+apiVersion: 1
+
+providers:
+  - name: rcaldas
+    orgId: 1
+    folder: RCaldas
+    type: file
+    disableDeletion: false
+    # Recarrega sem reiniciar o container: editou o JSON, em 30s aparece.
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

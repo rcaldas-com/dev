@@ -1,0 +1,232 @@
+{
+  "uid": "rcaldas-seguranca",
+  "title": "Segurança — firewall, SSH e fail2ban",
+  "description": "Quem esta batendo na porta e em quais portas. Fonte: regra LIMBO do nftables (kernel, via journal), sshd e fail2ban. LEIA: o log do firewall e' AMOSTRA (limit rate 100/minute); pra censo exato de pacotes use o counter da propria regra no nft.",
+  "tags": ["rcaldas", "seguranca", "firewall"],
+  "timezone": "America/Sao_Paulo",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Pacotes dropados (amostra)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "IPs de origem distintos",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "count(count by (src) (count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` | regexp `SRC=(?P<src>[0-9.]+)` [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Tentativas de auth SSH",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({service=~\"sshd.*\"} |~ `Failed password|Invalid user|invalid user` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Bans do fail2ban",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Pacotes dropados por minuto",
+      "description": "Teto de 100/min pela regra. Se a linha encostar em 100 e ficar reta, o log saturou e virou amostra truncada -- o numero real e' maior.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 20, "showPoints": "never" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 95 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "drops/min",
+          "expr": "sum(count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` [1m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Top 8 portas alvo — tendencia",
+      "description": "Porta que aparece de repente e nao existia antes costuma ser CVE nova sendo varrida em massa. Vale conferir a que servico ela corresponde.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "showPoints": "auto" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "{{proto}}/{{dpt}}",
+          "expr": "topk(8, sum by (proto, dpt) (count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` | regexp `PROTO=(?P<proto>\\S+) SPT=\\d+ DPT=(?P<dpt>\\d+)` [10m])))"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Portas mais tentadas no periodo",
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "topk(20, sum by (dpt) (count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` | regexp `DPT=(?P<dpt>\\d+)` [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "IPs de origem mais insistentes",
+      "description": "Um IP com MUITAS tentativas numa porta SO' costuma ser cliente legitimo sendo bloqueado, nao ataque -- foi assim que se descobriu a 21114 do RustDesk. Ataque tende a espalhar por varias portas ou vir de varios IPs vizinhos.",
+      "gridPos": { "h": 10, "w": 8, "x": 8, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "topk(20, sum by (src, dpt) (count_over_time({host=\"us\", service=\"kernel\"} |= `LIMBO` | regexp `SRC=(?P<src>[0-9.]+)` | regexp `DPT=(?P<dpt>\\d+)` [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Bans por jail",
+      "gridPos": { "h": 10, "w": 8, "x": 16, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "sum by (jail) (count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` | regexp `\\[(?P<jail>[^\\]]+)\\]\\s+Ban` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Auth SSH falha vs bans do fail2ban",
+      "description": "As duas linhas juntas mostram se o fail2ban esta acompanhando. Falha subindo com ban parado = jail nao esta pegando o padrao.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "showPoints": "auto" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "auth SSH falha",
+          "expr": "sum(count_over_time({service=~\"sshd.*\"} |~ `Failed password|Invalid user|invalid user` [5m]))"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "bans",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` [5m]))"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Ultimos bans",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"fail2ban\"} |= `Ban `"
+        }
+      ]
+    }
+  ]
+}

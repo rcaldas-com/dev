@@ -1,0 +1,172 @@
+{
+  "uid": "rcaldas-frota-log",
+  "title": "Frota — volume de log",
+  "description": "Quanto cada host e cada servico esta falando. Serve pra achar mudanca de comportamento: um servico que dobra de volume sem deploy costuma ser loop de erro; e silencio repentino num host e' tao suspeito quanto pico.",
+  "tags": ["rcaldas", "log"],
+  "timezone": "America/Sao_Paulo",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "host",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "host", "refId": "host", "type": 1 },
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Linhas no periodo",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({host=~\"$host\"} [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Servicos ativos",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "count(count by (service) (count_over_time({host=~\"$host\"} [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pico de linhas/min",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["max"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({host=~\"$host\"} [1m]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Hosts reportando",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "count(count by (host) (count_over_time({host=~\"$host\"} [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Linhas por minuto — por host",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 15, "showPoints": "never" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "{{host}}",
+          "expr": "sum by (host) (count_over_time({host=~\"$host\"} [1m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Linhas por minuto — top 10 servicos",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 15, "showPoints": "never" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "{{service}}",
+          "expr": "topk(10, sum by (service) (count_over_time({host=~\"$host\"} [1m])))"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Volume por host e servico no periodo",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "topk(25, sum by (host, service) (count_over_time({host=~\"$host\"} [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Linhas com cara de erro — por servico",
+      "description": "FILTRO AMPLO, com falso positivo conhecido e ja descontado: o boot do `web` gera 8 linhas de ruido do pdfjs que casam com /error|warn/i (uma delas contem literalmente 'Error: Cannot find module'), e a linha SAUDAVEL do emailer e' 'Erros: 0'. As tres exclusoes estao na query. Mesmo assim, leia isto como MUDANCA DE PATAMAR, nunca como contagem absoluta de erros.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10, "showPoints": "auto" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "{{service}}",
+          "expr": "topk(8, sum by (service) (count_over_time({host=~\"$host\"} |~ `(?i)(error|erro|fatal|critical|exception|traceback)` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` [5m])))"
+        }
+      ]
+    }
+  ]
+}

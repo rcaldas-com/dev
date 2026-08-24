@@ -207,9 +207,135 @@ Host-down é detectado por uma varredura que pega carona no heartbeat de
 qualquer host, com trava no Redis (`monitor:offline-sweep`), abrindo
 incidente após 5 min sem heartbeat.
 
-## Pendências levantadas na Sessão 2 (não implementadas)
+## Sessão 3 — log do `us`, firewall, dashboards e mail no journal
+
+### Log do próprio `us` no Loki — via **journal**, não rsyslog
+
+Cobertura foi de 6 para **38 serviços**. A escolha da fonte tem motivo
+medido, e corrige uma afirmação errada que ficou registrada antes ("o rate
+limit resolveu o flood pra zero"):
+
+O rsyslog **perdeu o kernel pro journald**. As mensagens do nftables
+(`LIMBO`) existiam só no ring buffer e no journal: `grep LIMBO` dava **zero**
+em `/var/log/kern.log`, `/var/log/syslog` e `/var/log/messages`, e o
+`kern.log` parou de ser escrito às 14:23. No journal eram **14.401 linhas em
+24h** — exatamente o teto de `10/minute`. A regra nunca parou de logar; o log
+é que não ia pro disco onde se procurou.
+
+O journal é superconjunto dos arquivos no resto: `sshd` 963 linhas contra 0
+(auth é excluída do syslog por padrão no Debian), `CRON` 4.896 contra 1.143,
+`mailu-front` 16.300 contra 11.373.
+
+`max_age = "24h"` porque o journal está em 988MB, no próprio
+`SystemMaxUse=1G` — sem teto, o primeiro start ingeriria tudo e estouraria a
+memória. `service` vem do `SYSLOG_IDENTIFIER` (31 distintos, contados antes
+de virar label). `fail2ban` entra por arquivo: é o único fora do journal.
+
+### nftables: 10 → 100/minute, e a porta 21114 liberada
+
+Trocado com `nft replace rule`, **não** recarregando `/etc/nftables.conf`. O
+arquivo começa com `flush ruleset` e um reload apagaria as regras que o
+**fail2ban** instalou (`table ip filter`/`ip6 filter`) sem ele saber — bans
+parariam de valer em silêncio.
+
+Resultado: **~43/min sem saturar o teto**. A 10/min estava saturado, ou seja,
+amostra truncada.
+
+⚠️ **O log é amostra; o contador é censo.** Se o tráfego passar de 100/min o
+log trunca de novo. Pra contagem exata use o `counter ... "total unfiltered
+input packets"` da própria regra.
+
+**Análise de 7 dias (105.151 linhas dropadas):**
+
+| porta | linhas | leitura |
+|---|---|---|
+| TCP 21114 | **53.603** (51%) | cliente RustDesk legítimo — 52.753 de um IP só |
+| TCP 22 | 12.365 | força bruta distribuída (bloco `91.92.42.x`) |
+| TCP 8080/3389/8443/445 | ~1.000 | scan genérico |
+| GRE (proto 47) | 194 | espalhado por IPs distintos = scan, não túnel |
+
+**A 21114 era o único tráfego legítimo sendo dropado** — liberada
+(`tcp dport 21114-21119`). Nada escuta nela (é o console do RustDesk
+**Pro**; rodamos a OSS `hbbs 1.1.14`), mas isso já melhora: com `drop` o
+cliente retransmite pra sempre, com `accept` recebe RST e desiste. Volume
+total caiu de ~43 para ~25 drops/min.
+
+### Dashboards provisionados
+
+Dois, versionados em `monitor/grafana/dashboards/`, recarregados a cada 30s
+sem restart. Editar pela UI **não** persiste (`allowUiUpdates: false`) — o
+que vale é o arquivo.
+
+- **Frota — volume de log**: linhas/min por host e por serviço, tabela de
+  volume, e um painel de "linhas com cara de erro" com as três exclusões de
+  ruído conhecidas já embutidas.
+- **Segurança**: drops/min (com limiar visual em 95, onde o log satura),
+  top portas e IPs, bans por jail, e auth SSH falha × bans sobrepostos.
+
+Ficam em `/etc/grafana/dashboards` e não dentro de `/var/lib/grafana`, que é
+volume nomeado — montar bind dentro de volume é aninhamento frágil à toa.
+
+### Mail local → journal (a decisão "B")
+
+`scripts/mail-to-journal.sh`, instalado como `sendmail` em `bag`. Testado
+ponta a ponta: `mail -s ... root` → journal (`programname=local-mail`) →
+túnel → Loki.
+
+**A descoberta que justificou a escolha:** os hosts *têm* MTA (postfix
+3.10.13) — a checagem anterior que dizia "sem MTA" estava errada, foi PATH
+de shell não-interativo, o mesmo erro que fez o `smartctl` parecer ausente.
+O problema real é pior: no `us` há **17 mensagens presas na fila desde
+21/08** (42 KB), todas do `MAILER-DAEMON` pro Gmail, falhando com
+`local data error while talking to us.rcaldas.com`. O canal de email está
+quebrado há dias, em silêncio — exatamente o modo de falha que deixou o
+alerta do `zed` sem sair.
+
+⚠️ Não instalei o shim no `us`: lá o postfix do host convive com o Mailu, e
+desviar o `sendmail` merece olhar antes. **A fila presa continua presa.**
+
+### RustDesk movido para `/var/rcaldas/rustdesk`
+
+Estava em `/var/rustdesk`. `down` → `mv` → `up`, com `logging: syslog`
+adicionado (tags `hbbs`/`hbbr`) pra cair no coletor como os outros serviços.
+
+Chave do servidor preservada e conferida por hash antes e depois
+(`id_ed25519` = `77f52aa1…`, pub `PJzb9BstlwNeGtTOyVCl9AW3vz9pYMxVkKAhxyDinys=`).
+Se um dia mover de novo: **`data/` tem que ir junto** — perder essa chave
+obriga re-adicionar o servidor em cada cliente.
+
+## Pendências levantadas na Sessão 2
 
 ### P0 — `bag`: disco `sdb` falhando no pool `tank`
+
+**Atualização da Sessão 3 — SMART instalado e o diagnóstico fechado.** Não é
+a energia instável; é o disco.
+
+| atributo | sdb | sda | sdc |
+|---|---|---|---|
+| Reallocated_Sector_Ct | **734** | 0 | 0 |
+| Reported_Uncorrect | **9.891** (value=001, thr=000) | — | — |
+| ATA Error Count | **8.409** | 1 | 50 |
+| Power_On_Hours | 7.107 | 17.549 | 19.668 |
+| Power_Cycle_Count | 5.011 | 4.470 | 3.368 |
+
+Os três discos viveram as **mesmas quedas de energia** (4-5 mil ciclos cada).
+`sda` e `sdc` têm **2,5× mais horas ligados e zero setores realocados**. Se
+a tomada fosse a causa, os três estariam machucados — só o `sdb` está, e ele
+é o mais novo. É unidade ruim.
+
+⚠️ **O teste longo passou** ("Completed without error") — e isso é a
+armadilha: o SMART lê o mapeamento *atual*, e os 734 setores ruins já foram
+remapeados pra reserva. Só reprova quando a reserva acabar. `Reported_Uncorrect`
+está em `value=001` contra `threshold=000`: **um ponto** de reprovar.
+
+Recomendação: **substituir, não reinserir**. E não precisa tirar do pool pra
+testar (o self-test roda no próprio disco). Tirar é a parte perigosa —
+`raidz1` com 3 discos tolera 1 falha, e com o `sdb` offline ficam **zero**
+redundância. Quando o disco novo chegar, use
+`zpool replace tank sdb <novo>` **com o sdb ainda plugado**: assim o ZFS
+pode ler dele durante o resilver se outro tropeçar.
+
+### P0-original — como foi descoberto
 
 Descoberto ao responder "tem mensagem de ZFS nos logs?". **Não é hipótese**:
 
