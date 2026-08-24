@@ -3,6 +3,16 @@
 # perder o volume) nao perde a configuracao.
 apiVersion: 1
 
+# Trocar o uid de um datasource JA provisionado nao funciona: o Grafana
+# procura pelo uid novo, nao acha, e falha o modulo de provisionamento
+# inteiro -- o container entra em loop de restart e a UI nao sobe. Este
+# bloco apaga o antigo pelo nome antes de recriar. Pode ficar aqui
+# permanentemente: apagar-e-recriar e' idempotente, e o datasource nao
+# guarda estado nenhum (dashboards vem de arquivo tambem).
+deleteDatasources:
+  - name: Loki
+    orgId: 1
+
 datasources:
   - name: Loki
     type: loki
