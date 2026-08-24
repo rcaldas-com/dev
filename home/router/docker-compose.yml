@@ -1,0 +1,14 @@
+services:
+  dnsmasq-test:
+    image: 4km3/dnsmasq:latest
+    container_name: home-router-test
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./dnsmasq.conf:/etc/dnsmasq.conf:ro
+      - ./leases:/var/lib/misc
+      - ./hosts:/etc/dnsmasq-hosts
+    command: ["-C", "/etc/dnsmasq.conf", "--no-daemon"]

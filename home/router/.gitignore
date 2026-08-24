@@ -1,0 +1,4 @@
+leases/
+hosts/hosts.conf
+*.pcap
+*.log
