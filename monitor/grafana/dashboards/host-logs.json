@@ -1,0 +1,90 @@
+{
+  "uid": "rcaldas-host-logs",
+  "title": "Logs por host",
+  "description": "Log cru de um host, com filtro livre. E' o destino dos links de 'ver o log' nos emails de incidente -- por isso o uid e o nome das variaveis sao estaveis: mudar qualquer um dos dois quebra links ja enviados.",
+  "tags": ["rcaldas", "log"],
+  "timezone": "America/Sao_Paulo",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "host",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "host", "refId": "host", "type": 1 },
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false
+      },
+      {
+        "name": "service",
+        "label": "serviço",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": { "label": "service", "refId": "service", "type": 1 },
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "busca",
+        "label": "contém",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Linhas por minuto — $host",
+      "description": "Serve de mapa: o pico costuma ser o momento do problema. Clique-e-arraste aqui recorta a janela do painel de baixo.",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 20, "showPoints": "never" }, "unit": "short" },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "{{service}}",
+          "expr": "sum by (service) (count_over_time({host=\"$host\", service=~\"$service\"} |~ \"(?i)$busca\" [1m]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Log — $host",
+      "gridPos": { "h": 22, "w": 24, "x": 0, "y": 7 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{host=\"$host\", service=~\"$service\"} |~ \"(?i)$busca\""
+        }
+      ]
+    }
+  ]
+}
