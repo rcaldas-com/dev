@@ -275,6 +275,42 @@ que vale é o arquivo.
 Ficam em `/etc/grafana/dashboards` e não dentro de `/var/lib/grafana`, que é
 volume nomeado — montar bind dentro de volume é aninhamento frágil à toa.
 
+#### Três armadilhas que só apareceram ao validar os painéis
+
+1. **`max_query_series` (500) estourava os painéis de firewall.** Cada porta
+   e cada IP distinto vira **uma série** na hora da consulta; em poucas horas
+   de scan passa de 500 e a consulta morre com
+   `maximum number of series reached` — painel vazio, sem erro visível na
+   tela. O `topk` **não** salva: o Loki monta todas as séries antes de
+   recortar. Subido pra 5000 em `monitor/loki.yaml`.
+   Não confundir com cardinalidade de *label* (essa continua baixa: `host` +
+   `service`): são séries efêmeras extraídas por `| regexp` do texto, que só
+   existem durante a consulta.
+2. **Trocar o `uid` de um datasource já provisionado derruba o Grafana.** Ele
+   procura o uid novo, não acha, falha o módulo de provisionamento inteiro e
+   entra em **loop de restart** — a UI não sobe. Resolvido com
+   `deleteDatasources` no mesmo arquivo, que apaga pelo nome antes de
+   recriar.
+3. **Bind mount de config não reinicia sozinho.** `docker compose up -d loki`
+   não recria o container quando só o arquivo montado mudou (a spec é a
+   mesma), e o Loki lê a config só no start. Precisa de `restart` explícito.
+   Vale pro Loki e pro Alloy.
+
+#### O que os painéis mostraram de imediato
+
+- **`fail2ban`: 2.610 linhas "already banned" e ZERO bans novos em 24h — de
+  apenas 4 IPs distintos.** Um ban efetivo deveria fazer o IP parar de gerar
+  linha; 4 endereços reincidindo milhares de vezes sugere que a **ação de ban
+  pode não estar bloqueando de fato**. Vale investigar (jail
+  `bad-auth-bots`). Ficou registrado nos painéis como duas séries separadas
+  em vez de um "bans" que mostraria zero e pareceria saúde.
+- **O painel de SSH fica em zero no `us`, e está certo.** A chain não tem
+  `tcp dport 22 accept` — o acesso real é pela 8422. As 12.365 tentativas na
+  porta 22 morrem no firewall e nunca chegam no `sshd`; elas aparecem no
+  painel de firewall, não no de SSH.
+- **A 21114 parou de ser dropada às 20:02:11**, no minuto da mudança, e
+  seguiu em zero. Confirmado com a regra viva e 2h de silêncio.
+
 ### Mail local → journal (a decisão "B")
 
 `scripts/mail-to-journal.sh`, instalado como `sendmail` em `bag`. Testado
