@@ -44,7 +44,8 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Tentativas de auth SSH",
+      "title": "Tentativas de auth SSH (frota)",
+      "description": "Cobre a frota inteira, nao so' o us -- e no `us` isto tende a ficar em ZERO de proposito: a chain do nftables nao tem regra `tcp dport 22 accept`, entao o SSH da internet e' dropado antes de chegar no sshd (o acesso real e' pela 8422). As 12.365 tentativas na porta 22 vistas em 7 dias aparecem no painel de firewall, nunca aqui.",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
@@ -60,7 +61,8 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Bans do fail2ban",
+      "title": "IPs banidos reincidindo",
+      "description": "IPs distintos que o fail2ban voltou a detectar DEPOIS de ja te-los banido. Medido em 23/08/2026: 2.531 linhas 'already banned' em 24h contra ZERO bans novos. Se este numero for alto e o de bans novos for zero, vale investigar se a acao de ban esta de fato bloqueando o trafego -- um ban efetivo deveria fazer o IP parar de gerar linha nova.",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
@@ -69,7 +71,7 @@
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
           "queryType": "instant",
-          "expr": "sum(count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` [$__range]))"
+          "expr": "count(count by (ip) (count_over_time({service=\"fail2ban\"} |~ `already banned` | regexp `(?P<ip>\\d+\\.\\d+\\.\\d+\\.\\d+)` [$__range])))"
         }
       ]
     },
@@ -169,10 +171,11 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Bans por jail",
+      "title": "Atividade do fail2ban por jail",
+      "description": "Duas series: A = deteccoes de IP ja banido (o volume real hoje), B = bans novos. Se A cresce e B fica em zero, o fail2ban esta vendo os mesmos IPs de novo em vez de barra-los.",
       "gridPos": { "h": 10, "w": 8, "x": 16, "y": 13 },
       "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "options": { "sortBy": [{ "displayName": "Value #A", "desc": true }] },
       "transformations": [
         { "id": "organize", "options": { "excludeByName": { "Time": true } } }
       ],
@@ -182,15 +185,22 @@
           "datasource": { "type": "loki", "uid": "loki" },
           "queryType": "instant",
           "format": "table",
-          "expr": "sum by (jail) (count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` | regexp `\\[(?P<jail>[^\\]]+)\\]\\s+Ban` [$__range]))"
+          "expr": "sum by (jail) (count_over_time({service=\"fail2ban\"} |~ `already banned` | regexp `\\[(?P<jail>[^\\]]+)\\]` [$__range]))"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "sum by (jail) (count_over_time({service=\"fail2ban\"} |~ `\\] Ban ` | regexp `\\[(?P<jail>[^\\]]+)\\]` [$__range]))"
         }
       ]
     },
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Auth SSH falha vs bans do fail2ban",
-      "description": "As duas linhas juntas mostram se o fail2ban esta acompanhando. Falha subindo com ban parado = jail nao esta pegando o padrao.",
+      "title": "Auth SSH falha × atividade do fail2ban",
+      "description": "Tres linhas: falha de auth SSH na frota, bans NOVOS, e re-deteccoes de IP ja banido. O padrao saudavel e' ban novo acompanhando a falha. O padrao medido em 23/08 foi o oposto: zero ban novo e 2.531 re-deteccoes, o que sugere que a acao de ban pode nao estar bloqueando de fato.",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
       "datasource": { "type": "loki", "uid": "loki" },
       "fieldConfig": {
@@ -208,15 +218,21 @@
         {
           "refId": "B",
           "datasource": { "type": "loki", "uid": "loki" },
-          "legendFormat": "bans",
-          "expr": "sum(count_over_time({service=\"fail2ban\"} |= `Ban ` != `Unban` [5m]))"
+          "legendFormat": "bans novos",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} |~ `\\] Ban ` [5m]))"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "re-deteccao (ja banido)",
+          "expr": "sum(count_over_time({service=\"fail2ban\"} |~ `already banned` [5m]))"
         }
       ]
     },
     {
       "id": 11,
       "type": "logs",
-      "title": "Ultimos bans",
+      "title": "Atividade recente do fail2ban",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
       "datasource": { "type": "loki", "uid": "loki" },
       "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
@@ -224,7 +240,7 @@
         {
           "refId": "A",
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service=\"fail2ban\"} |= `Ban `"
+          "expr": "{service=\"fail2ban\"} |~ `(?i)\\b(ban|unban)`"
         }
       ]
     }
