@@ -58,6 +58,16 @@ iptables -S DOCKER-USER >/dev/null 2>&1 \
 echo "==> recriando as regras do fail2ban (actionstart de cada jail)"
 systemctl restart fail2ban
 
+# `systemctl restart` volta assim que o processo sobe, mas as jails (e
+# portanto os actionstart que criam ipset e regra) levam mais alguns
+# segundos. Sem esperar, a conferencia abaixo acusa "ban inerte" num
+# sistema que esta apenas terminando de subir -- susto falso.
+echo "==> aguardando as jails subirem"
+for i in $(seq 1 45); do
+  fail2ban-client status >/dev/null 2>&1 && ipset list -n 2>/dev/null | grep -q '^f2b-' && break
+  sleep 1
+done
+
 echo "==> conferindo o que ficou de pe"
 for s in nftables docker fail2ban; do
   printf '    %-10s %s\n' "$s" "$(systemctl is-active $s)"
