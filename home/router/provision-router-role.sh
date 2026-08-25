@@ -18,6 +18,7 @@ IFACE="${1:?uso: sudo ./provision-router-role.sh <interface-lan>}"
 NFT_MAIN="/etc/nftables.conf"
 NFT_DROPIN_DIR="/etc/nftables.d"
 NFT_DROPIN="$NFT_DROPIN_DIR/router-role.conf"
+NFT_NAT_DROPIN="$NFT_DROPIN_DIR/router-role-nat.conf"
 NM_DROPIN_DIR="/etc/NetworkManager/conf.d"
 
 if [[ "$EUID" -ne 0 ]]; then
@@ -89,6 +90,8 @@ table inet filter {
 		type filter hook output priority filter; policy accept;
 	}
 }
+
+include "/etc/nftables.d/router-role-nat.conf"
 EOF
 elif ! grep -qF 'include "/etc/nftables.d/router-role.conf"' "$NFT_MAIN"; then
   echo "  [ajustando] adicionando include do router-role.conf em $NFT_MAIN"
@@ -105,11 +108,33 @@ else
   echo "  [ok] include do router-role.conf ja presente em $NFT_MAIN"
 fi
 
+if ! grep -qF 'include "/etc/nftables.d/router-role-nat.conf"' "$NFT_MAIN"; then
+  echo "  [ajustando] adicionando include do router-role-nat.conf (nivel raiz) em $NFT_MAIN"
+  printf '\ninclude "/etc/nftables.d/router-role-nat.conf"\n' >> "$NFT_MAIN"
+else
+  echo "  [ok] include do router-role-nat.conf ja presente em $NFT_MAIN"
+fi
+
 cat > "$NFT_DROPIN" <<EOF
 # Gerado por provision-router-role.sh -- reescrito a cada execucao.
 # Libera DHCP/DNS so na interface LAN da role router, nunca em geral.
 iifname "$IFACE" udp dport { 67, 53 } accept
 iifname "$IFACE" tcp dport 53 accept
+EOF
+
+cat > "$NFT_NAT_DROPIN" <<EOF
+# Gerado por provision-router-role.sh -- reescrito a cada execucao.
+# Intercepta qualquer pacote porta 53 saindo da LAN e redireciona pro
+# dnsmasq local -- nao importa o que o cliente tenha configurado como DNS,
+# o router decide. Principio "intranet que nao depende de DNS" do HOME.md,
+# aplicado como politica: o resolver do cliente nunca manda.
+table ip dns_redirect_$IFACE {
+	chain prerouting {
+		type nat hook prerouting priority dstnat; policy accept;
+		iifname "$IFACE" udp dport 53 redirect to :53
+		iifname "$IFACE" tcp dport 53 redirect to :53
+	}
+}
 EOF
 
 echo "  [validando] nft -c -f $NFT_MAIN"
