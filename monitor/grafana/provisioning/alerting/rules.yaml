@@ -103,3 +103,71 @@ groups:
                     # verdade, que produz centenas.
                     type: gt
                     params: [10]
+
+      - uid: rcaldas-disco-degradando
+        title: Disco degradando
+        condition: limiar
+        # Curto porque o dado ja e' lento: o coletor roda de hora em hora.
+        # O que se quer evitar aqui nao e' pico passageiro -- e' descobrir
+        # tarde. O sdb do bag ficou 3 dias com erro de I/O sem ninguem ver.
+        for: 15m
+        annotations:
+          summary: '{{ $labels.host }} com disco degradando'
+          description: >-
+            Contador de erro de disco diferente de zero. ATENCAO: o SMART
+            pode dizer PASSED e o disco estar ruim -- ele so' reprova quando
+            um atributo cruza o limiar, e ate la ja pode haver centenas de
+            setores realocados. Olhe os contadores, nao o veredito.
+        labels:
+          severity: critical
+        isPaused: false
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: consulta
+            relativeTimeRange:
+              from: 10800
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: consulta
+              datasource: { type: loki, uid: loki }
+              editorMode: code
+              queryType: range
+              # Casa o que o scripts/disk-health.sh emite como problema:
+              # erro contabilizado pelo ZFS, ou contador SMART != 0.
+              # `realoc=0` nao casa porque o primeiro digito tem que ser 1-9.
+              expr: >-
+                sum by (host) (
+                  count_over_time(
+                    {job=~"remote-logs|host-journal"}
+                    |~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]`
+                    [3h]
+                  )
+                )
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: reduz
+            relativeTimeRange: { from: 10800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: reduz
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: consulta
+              reducer: last
+              settings: { mode: dropNN }
+          - refId: limiar
+            relativeTimeRange: { from: 10800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: limiar
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: reduz
+              conditions:
+                - evaluator:
+                    # Qualquer ocorrencia. Contador de erro de disco nao tem
+                    # nivel "aceitavel" -- zero ou investiga.
+                    type: gt
+                    params: [0]
