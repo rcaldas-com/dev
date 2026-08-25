@@ -2,26 +2,39 @@
 # Garante os pre-requisitos de HOST pra role "home" (LAN/WAN) numa interface.
 # Idempotente -- roda quantas vezes quiser, so aplica o que falta.
 #
-# Reescrito depois de um incidente real: a versao anterior usava
-# `systemctl reload nftables`, que reprocessa /etc/nftables.conf inteiro
-# -- e esse arquivo comeca com `flush ruleset`, que apaga TUDO, inclusive
-# as tabelas que o Docker gerencia via iptables-nft. Isso derrubou a
-# publicacao de porta de todos os containers do host (nao so os nossos).
+# Historico de duas rodadas de correcao real (credito: revisao cruzada
+# com o chat do Monitor, que testou tudo em netns descartavel antes de
+# confiarmos):
 #
-# Correcao (credito: revisao cruzada com o chat do Monitor, que testou em
-# netns descartavel e provou o problema):
-#   - NUNCA cria uma tabela/chain de base separada competindo no mesmo
-#     hook (input/forward) com policy propria -- testado que uma policy
-#     drop em qualquer chain do mesmo hook e terminal, e uma chain accept
-#     separada NAO resgata o que a outra derrubou.
-#   - As regras da role vivem em chains PROPRIAS (nao-base), referenciadas
-#     por "jump" a partir de UMA linha estavel dentro de chain input/
-#     chain forward -- inserida uma unica vez.
-#   - Atualizar as regras da role depois disso e SEMPRE incremental (nft
-#     flush chain / nft add rule numa chain especifica), nunca um reload
-#     do arquivo inteiro. flush ruleset so acontece se o arquivo base
-#     tiver que ser criado do zero (host nunca provisionado) -- nesse
-#     caso, o script avisa antes de aplicar.
+#   1a rodada -- incidente real: `systemctl reload nftables` reprocessa
+#   /etc/nftables.conf inteiro, que comeca com `flush ruleset` -- isso
+#   apagou as tabelas do Docker (gerenciadas por fora, via iptables-nft),
+#   derrubando publicacao de porta de todos os containers do host. E um
+#   plano cogitado de colocar forward numa tabela separada com policy
+#   drop teria quebrado de qualquer jeito: duas base chains no mesmo
+#   hook, um drop em qualquer uma e terminal -- uma chain accept separada
+#   nao resgata o que a outra derrubou (testado e provado em netns).
+#
+#   Correcao 1: as regras da role vivem em chains PROPRIAS (nao-base),
+#   referenciadas por "jump" a partir de UMA linha estavel dentro de
+#   chain input/chain forward -- inserida uma unica vez.
+#
+#   2a rodada -- gap descoberto: aplicar via `nft add rule` direto (sem
+#   persistir num arquivo que o boot releia do MESMO jeito) deixa a regra
+#   so em memoria. Simulado reboot em netns: a chain volta vazia e o DHCP
+#   morre nos primeiros 60s+boot ate o agente reconciliar -- ruim
+#   exatamente quando os clientes tambem estao subindo e entram em
+#   backoff.
+#
+#   Correcao 2: cada dropin agora e um artefato UNICO que serve os dois
+#   caminhos -- contem `flush chain ... ; add rule ...` (comandos
+#   completos, com tabela/chain explicitos), entao e valido tanto como
+#   `nft -f` direto (update a quente) quanto incluido no boot via
+#   `include "/etc/nftables.d/home-*.conf"` no FIM do arquivo principal
+#   (depois do bloco que declara as chains -- nft aborta com "did you
+#   mean chain X?" se o include vier antes). O glob e "home-*", nao "*",
+#   pra nao colidir com monitor-ports.conf (formato diferente: statements
+#   soltos pensados pra viver DENTRO de uma chain, nao comandos completos).
 #
 # O que resolve:
 #   1. Interface marcada unmanaged no NetworkManager (por MAC) -- senao
@@ -78,8 +91,8 @@ else
   echo "  [--] NetworkManager nao presente, pulando"
 fi
 
-# --- 2. nftables: garante a ESTRUTURA (chains proprias + jump), sem tocar
-#         em policy nenhuma de chain de base ---
+# --- 2. nftables: garante a ESTRUTURA (chains proprias, vazias, + jump +
+#         include no fim do arquivo), sem tocar em policy de chain de base ---
 mkdir -p "$NFT_DROPIN_DIR"
 
 if [[ ! -f "$NFT_MAIN" ]]; then
@@ -119,17 +132,18 @@ table inet filter {
 	chain output {
 		type filter hook output priority filter; policy accept;
 	}
-	chain home_lan_input {
-		include "/etc/nftables.d/home-lan-input.conf"
-	}
-	chain home_lan_forward {
-		include "/etc/nftables.d/home-lan-forward.conf"
-	}
+	chain home_lan_input { }
+	chain home_lan_forward { }
 }
 
-include "/etc/nftables.d/home-nat.conf"
+# Cada dropin e um artefato completo (flush chain + add rule / table
+# inteira) -- por isso o include vem DEPOIS das chains acima existirem,
+# nunca antes (nft aborta se a chain alvo ainda nao existe).
+include "/etc/nftables.d/home-*.conf"
 EOF
-  touch "$NFT_DHCP_DNS_DROPIN" "$NFT_FORWARD_DROPIN" "$NFT_NAT_DROPIN"
+  : > "$NFT_DHCP_DNS_DROPIN"
+  : > "$NFT_FORWARD_DROPIN"
+  : > "$NFT_NAT_DROPIN"
   nft -c -f "$NFT_MAIN"
   nft -f "$NFT_MAIN"
   BOOTSTRAPPED=1
@@ -143,26 +157,6 @@ fi
 
 live_chain_exists() { nft list chain inet filter "$1" >/dev/null 2>&1; }
 live_has_jump() { nft list chain inet filter "$1" 2>/dev/null | grep -qF "jump $2"; }
-
-# Os dropins de chain (home-lan-input.conf/home-lan-forward.conf) usam
-# statements soltos (iifname ... accept), formato certo pra dentro de um
-# 'include' num bloco chain {}. Fora desse contexto (nft -f direto) nao e
-# valido standalone -- por isso aplica sempre atraves de um wrapper
-# efemero que reabre a chain via table merge, nunca via arquivo persistido.
-apply_chain_dropin() {
-  local chain="$1" dropin="$2" wrapper
-  wrapper=$(mktemp)
-  cat > "$wrapper" <<EOF
-table inet filter {
-	chain $chain {
-		include "$dropin"
-	}
-}
-EOF
-  nft flush chain inet filter "$chain"
-  nft -f "$wrapper"
-  rm -f "$wrapper"
-}
 
 if [[ "$BOOTSTRAPPED" -eq 0 ]]; then
   # Garante ao vivo (sem tocar no arquivo/reload) que as chains proprias e
@@ -179,11 +173,6 @@ if [[ "$BOOTSTRAPPED" -eq 0 ]]; then
   # anexa um bloco novo no fim do arquivo, nunca edita o existente, nunca
   # conta chave. A chain input real tem um bloco icmpv6 multi-linha --
   # qualquer heuristica baseada em "primeira linha com }" cairia nele.
-  # Os arquivos de include precisam existir ANTES de validar o bloco que
-  # os referencia -- nft -c falha com "File not found" senao.
-  touch "$NFT_DHCP_DNS_DROPIN" "$NFT_FORWARD_DROPIN"
-  [[ -f "$NFT_NAT_DROPIN" ]] || echo "" > "$NFT_NAT_DROPIN"
-
   if ! grep -qF 'jump home_lan_input' "$NFT_MAIN"; then
     cp "$NFT_MAIN" "$NFT_MAIN.bak"
     cat >> "$NFT_MAIN" <<'EOF'
@@ -195,12 +184,8 @@ table inet filter {
 	chain forward {
 		jump home_lan_forward
 	}
-	chain home_lan_input {
-		include "/etc/nftables.d/home-lan-input.conf"
-	}
-	chain home_lan_forward {
-		include "/etc/nftables.d/home-lan-forward.conf"
-	}
+	chain home_lan_input { }
+	chain home_lan_forward { }
 }
 EOF
     if ! nft -c -f "$NFT_MAIN"; then
@@ -210,21 +195,25 @@ EOF
     fi
     rm -f "$NFT_MAIN.bak"
   fi
-  if ! grep -qF 'include "/etc/nftables.d/home-nat.conf"' "$NFT_MAIN"; then
-    printf '\ninclude "/etc/nftables.d/home-nat.conf"\n' >> "$NFT_MAIN"
+  if ! grep -qF 'include "/etc/nftables.d/home-*.conf"' "$NFT_MAIN"; then
+    printf '\n# Dropins da role home -- cada um e um artefato nft -f completo\n# (flush chain + add rule, ou table inteira), valido standalone. So\n# funciona aqui porque as chains acima ja existem neste ponto do arquivo.\ninclude "/etc/nftables.d/home-*.conf"\n' >> "$NFT_MAIN"
   fi
   echo "  [ok] estrutura da role garantida ao vivo, sem flush ruleset"
 fi
 
-# --- 3. Conteudo das regras: sempre incremental (flush so da NOSSA chain) ---
+# --- 3. Conteudo das regras: cada dropin e um artefato nft -f completo e
+#         standalone -- o MESMO arquivo serve o update a quente (nft -f
+#         direto) e o boot (include "home-*.conf" no fim do arquivo). Sem
+#         wrapper, sem duplicar formato. ---
 cat > "$NFT_DHCP_DNS_DROPIN" <<EOF
 # Gerado por provision-router-role.sh -- reescrito a cada execucao.
-# So aplicado ao vivo via 'nft flush chain' + 'nft -f', nunca via reload
-# do arquivo inteiro.
-iifname "$IFACE" udp dport { 67, 53 } accept
-iifname "$IFACE" tcp dport 53 accept
+# Idempotente: flush chain + add rule, sem flush ruleset. Valido como
+# nft -f direto (update a quente) e via include no boot.
+flush chain inet filter home_lan_input
+add rule inet filter home_lan_input iifname "$IFACE" udp dport { 67, 53 } accept
+add rule inet filter home_lan_input iifname "$IFACE" tcp dport 53 accept
 EOF
-apply_chain_dropin home_lan_input "$NFT_DHCP_DNS_DROPIN"
+nft -f "$NFT_DHCP_DNS_DROPIN"
 echo "  [ok] DHCP/DNS liberado pra $IFACE (chain home_lan_input, sem reload)"
 
 cat > "$NFT_NAT_DROPIN" <<EOF
@@ -255,10 +244,11 @@ if [[ -n "$WAN_IFACE" ]]; then
   fi
   cat > "$NFT_FORWARD_DROPIN" <<EOF
 # Gerado por provision-router-role.sh -- reescrito a cada execucao.
-ct state established,related accept
-iifname "$IFACE" oifname "$WAN_IFACE" accept
+flush chain inet filter home_lan_forward
+add rule inet filter home_lan_forward ct state established,related accept
+add rule inet filter home_lan_forward iifname "$IFACE" oifname "$WAN_IFACE" accept
 EOF
-  apply_chain_dropin home_lan_forward "$NFT_FORWARD_DROPIN"
+  nft -f "$NFT_FORWARD_DROPIN"
 
   NAT_MASQ="$NFT_DROPIN_DIR/home-nat-masquerade-$IFACE.conf"
   cat > "$NAT_MASQ" <<EOF
@@ -277,9 +267,10 @@ else
   # established/related, sem abrir nada) -- idempotente se rodar de novo
   # sem WAN depois de ter passado WAN antes.
   cat > "$NFT_FORWARD_DROPIN" <<'EOF'
-ct state established,related accept
+flush chain inet filter home_lan_forward
+add rule inet filter home_lan_forward ct state established,related accept
 EOF
-  apply_chain_dropin home_lan_forward "$NFT_FORWARD_DROPIN"
+  nft -f "$NFT_FORWARD_DROPIN"
 fi
 
 echo
