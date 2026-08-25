@@ -339,6 +339,166 @@ Chave do servidor preservada e conferida por hash antes e depois
 Se um dia mover de novo: **`data/` tem que ir junto** — perder essa chave
 obriga re-adicionar o servidor em cada cliente.
 
+## Sessão 4 — fail2ban, nftables com sets, Fase 2 e estado de disco
+
+### O fail2ban não bloqueava nada (bug real, semanas em silêncio)
+
+A jail `bad-auth-bots` tinha **24.563 falhas contra 8 bans**, e milhares de
+linhas "already banned" — o fail2ban redetectando os mesmos IPs que achava
+ter barrado. O ipset existia, com o `/24` dentro, e com **`References: 0`**:
+ninguém consultava o conjunto.
+
+Duas causas somadas:
+
+1. **Chain errada.** As ações padrão inserem em `INPUT`, o que serve pra
+   serviço do host (sshd, haproxy). O `mailu-front` é **container com porta
+   publicada**: esse tráfego é DNAT no `nat/PREROUTING` e segue por
+   `FORWARD`, sem nunca tocar `INPUT`. A chain certa é `DOCKER-USER`.
+2. **A regra tinha sumido.** O `iptables` destes hosts é `nf_tables`, então
+   as regras dele vivem no **mesmo ruleset** que o `flush ruleset` do
+   `/etc/nftables.conf` apaga. Um reload levou junto — em silêncio.
+
+Corrigido com `scripts/fail2ban/docker-user-set.conf`, cuja peça central é o
+**`actioncheck`**: o fail2ban o executa antes de cada ban e re-roda o
+`actionstart` se falhar, então a regra se restaura sozinha depois de um
+flush. É isso que fecha o buraco de verdade, não a inserção manual.
+
+O `mongodb-auth` tinha a mesma falha latente (mongo em container com 8417
+publicada, ação `iptables-multiport`): zero bans hoje, mas qualquer ban seria
+inerte. Passou pra mesma ação.
+
+⚠️ **Sem filtro de porta de propósito**: dentro do `DOCKER-USER` o pacote já
+passou pelo DNAT, então a porta ali é a do **container** (o mailu publica
+2580 → 80). A ação antiga filtrava `--dport 25` e já deixava 587 e 80 de fora
+mesmo quando funcionava.
+
+Verificado: 16 pacotes bloqueados em 60s pela regra restaurada.
+
+### nftables do `us`: sets nomeados
+
+Chain de ~25 para **13 regras**. O ganho não é CPU — é que **set nomeado se
+edita a quente**:
+
+```
+nft add element inet filter hosts_bloqueados { 1.2.3.4 }
+```
+
+Sem `flush ruleset`, portanto sem derrubar Docker e fail2ban. Bloquear um
+scanner deixou de exigir tocar no arquivo. Testado com 23 containers e as 2
+regras do fail2ban intactos.
+
+`scripts/nftables-reload.sh` faz o reload na ordem que importa — **docker
+primeiro** (recria a `DOCKER-USER`), **fail2ban depois** (insere dentro dela)
+— e avisa se algum ipset ficar com `References: 0`, que é a assinatura do bug
+acima.
+
+SIA (9981/9984) removido: estava aberto no ruleset vivo mas comentado no
+arquivo, nada escutava, zero tentativas em 7 dias. Registro DNS também
+removido.
+
+### Fase 2 — alerta por conteúdo de log
+
+**Grafana avalia → webhook → `/api/log-alert` → incidente.** Sem
+Alertmanager: o Grafana já fala com o Loki, já tem motor de regra com `for` e
+já mostra o histórico da avaliação. Dois lugares decidindo "quando algo está
+ruim" divergem sempre.
+
+Reaproveita todo o `upsertIncident`: dedupe, email só na transição, teto de
+10/host/hora, assunto estável, e o trecho de log no corpo.
+
+**A lista de exclusão é pré-requisito, não refinamento.** Medido: 8 de 22
+linhas do `web.log` casam com `error|warn` e as 8 são ruído de boot do pdfjs
+(uma contém literalmente `Error: Cannot find module`). No `emailer.log` a
+linha **saudável** é `Erros: 0`. Sem os `!=` a regra dispararia em todo
+deploy.
+
+`noDataState: OK` de propósito: serviço calado pode ser bom ou péssimo, e
+essa regra não distingue — quem cobre queda é o `sweepOfflineHosts`.
+
+Verificado ponta a ponta: 401 sem token, `firing` abre, `resolved` fecha, dois
+emails com o **mesmo assunto** (Gmail agrupa) e `logUrl` apontando pro
+Drilldown já filtrado.
+
+### `monitor.rcaldas.com` — o PWA do Monitor
+
+O PWA instalava como `/finance` mesmo com o metadata correto. Causa: `/monitor`
+sem sessão dá **307 → `/login`**, que renderiza o layout **raiz** e linka o
+manifest da raiz. Quem instala pela tela de login captura aquela identidade.
+
+Trocar só o link não resolveria: o navegador **ignora manifest cujo `scope`
+não cobre a página atual**. Com hostname próprio o `scope` vira `"/"` — o host
+inteiro, login incluído. A correção é toda no HAProxy (uma regra que devolve o
+manifest do Monitor em `/manifest.webmanifest` apenas naquele host), então
+funcionou sem rebuild.
+
+### Mail local → journal, e postfix fora do provisionamento
+
+`set_smtp()` virou `set_local_mail()`. Saiu postfix, sasl, relay pro Mailu e a
+criação de conta — o Mailu volta a ser serviço independente, não dependência
+de provisionamento de host.
+
+O shim (`scripts/mail-to-journal.sh`) entra pelo `/install`, que é o caminho
+de rollout que **já existe**: subir o `AGENT_VERSION` faz a frota inteira se
+reinstalar sozinha pelo job `update-agent`.
+
+⚠️ **`MAILTO` no crontab tem que continuar definido**, o que é contraintuitivo:
+com `MAILTO` vazio o cron **descarta a saída do job sem nem invocar o
+sendmail**, e é justamente a saída de job que falha que se quer no log.
+
+Descoberta que justificou a escolha: os hosts **têm** postfix (a checagem que
+dizia o contrário errou por PATH de shell não-interativo, mesmo erro que fez o
+`smartctl` parecer ausente), mas o `us` tinha **17 mensagens presas na fila
+desde 21/08**. Email como canal de alerta falha calado.
+
+### `/init` cross-platform (armhf/arm64)
+
+`DPKG_ARCH` vem de `dpkg --print-architecture`, não de `uname -m` — a
+distinção que importa num Rock64: chip ARMv8, userland 32-bit, dpkg reporta
+`armhf`. O fastfetch publica nomes que **não batem** com os do dpkg
+(`aarch64` ≠ `arm64`, `armv7l` ≠ `armhf`). Firefox: a Mozilla não publica
+tarball ARM, então em ARM instala `firefox-esr` e retorna **antes** do
+`remove firefox-esr`, que só faz sentido em amd64.
+
+### Estado de disco (fecha a P3)
+
+`scripts/disk-health.sh` + timer horário: `zpool status -x`, contadores por
+vdev e atributos SMART → `logger` → journal → Loki. Saudável como
+`daemon.info`, problema como `daemon.err`.
+
+**Os contadores vão junto do veredito de propósito.** `PASSED` é o indicador
+menos informativo do SMART — ele só reprova quando um atributo cruza o limiar,
+e o `sdb` do `bag` **passa no teste longo** com 735 realocados e
+`Reported_Uncorrect` a um ponto do limite.
+
+A regra "Disco degradando" fecha o ciclo com a Fase 2: contador != 0 abre
+incidente. `realoc=0` não casa porque o primeiro dígito tem que ser 1-9.
+
+### Role `home` = router da LAN
+
+`proxy` é o equivalente na WAN. Com a interface LAN preenchida, a sugestão
+emite drop-ins autocontidos em `/etc/nftables.d/home-lan-{input,forward}.conf`
+— mesmo formato que o `home/router/provision-router-role.sh` consome.
+
+**Verificado em netns, e inverteu o desenho original:** com duas base chains
+no mesmo hook, um `drop` em qualquer uma é **terminal**, e o `accept` da outra
+**não resgata** o pacote. Consequências:
+
+- Um drop-in com `table inet router { ... accept ... }` seria **inerte** — o
+  DHCPDISCOVER continuaria morrendo na `policy drop` da chain principal.
+- A chain `forward` continua `policy accept` **mesmo num router**: uma tabela
+  extra com `policy drop` derrubaria o tráfego dos containers do host.
+
+O `include` vem **depois** do bloco que declara as chains, senão o
+`flush chain` não acha o alvo e o nft aborta a carga inteira. Erro duro,
+felizmente, não silencioso.
+
+⚠️ **Duas armadilhas de operação que se repetiram:**
+- **Bind mount de config não recria o container.** `up -d` não vê mudança na
+  spec quando só o arquivo montado mudou, e Loki/Grafana leem config só no
+  start. Precisa de `restart` explícito.
+- **Trocar o `uid` de um datasource já provisionado** põe o Grafana em loop de
+  restart. Resolve-se com `deleteDatasources` no mesmo arquivo.
+
 ## Pendências levantadas na Sessão 2
 
 ### P0 — `bag`: disco `sdb` falhando no pool `tank`
@@ -454,38 +614,43 @@ periódica.
 
 ## Em aberto — próximos passos possíveis
 
-1. ~~**Ler esses logs em algum lugar útil.**~~ **Feito** — ver a seção
-   "Sessão 2" acima.
-2. **Instrumentação → incidente.** A ideia original era os apps
-   escreverem direto em `monitor_incidents` (mesmo Mongo compartilhado
-   entre `web` e `wallet`) quando uma leitura falha repetidamente — o
-   `/monitor` já é source-agnostic (`getMonitorOverview` lê
-   `monitor_incidents` sem filtrar por host), então apareceria sem
-   nenhuma mudança no `web`. **Adiado de propósito** — decisão explícita
-   de revisar o desenho antes (threshold de quantas falhas seguidas abre
-   incidente, severidade, etc.) antes de mexer numa collection de
-   produção que já dispara email de alerta.
-   - Alternativa, agora bem mais curta com a Sessão 2 no ar: regra no
-     **ruler do Loki** → contact point webhook → endpoint novo no `web`
-     que chama o `upsertIncident` **que já existe**
-     (`web/lib/monitor.ts`). Reaproveita dedupe, email só na transição,
-     teto de 10 emails/host/hora e `emailSubject` estável — e o incidente
-     aparece no `/monitor` sem tocar no dashboard, porque
-     `getMonitorOverview` já é agnóstico de origem. Não exige mudar código
-     de app nenhum.
-   - **A lista de exclusão é pré-requisito, não refinamento.** Medido no
-     log real: no `web.log`, **8 de 22 linhas** casam com `error|warn` — e
-     as 8 são ruído de boot do pdfjs, incluindo uma que contém
-     literalmente `Error: Cannot find module '@napi-rs/canvas'`. No
-     `emailer.log`, a linha **saudável** `❌ Erros: 0` também casa. Uma
-     regra ingênua mandaria email a cada deploy. Com o Grafana no ar dá
-     pra escrever a query contra o log real e ver quantas vezes ela teria
-     disparado nos últimos dias **antes** de ligar qualquer email.
-   - Quando for: histerese espelhando o `CONSECUTIVE_BREACHES_REQUIRED = 3`
-     que já existe, e no `summary` a última linha **redigida** (sem o
-     prefixo syslog, truncada em ~200 chars, blobs tipo credencial
-     `[A-Za-z0-9_-]{24,}` trocados por `***`) — o summary vira corpo de
-     email.
-3. **Estender pra `site`** (e decidir se `redis` faz sentido).
-4. **CI/CD** (`site/SITE.md`) é um projeto separado, não relacionado a
-   este — só compartilha o mesmo servidor `us`.
+*(atualizado no fim da Sessão 4)*
+
+1. ~~**Ler esses logs em algum lugar útil.**~~ **Feito** (Sessão 2).
+2. ~~**Instrumentação → incidente.**~~ **Feito** (Sessão 4, Fase 2). Saiu
+   pelo alerting do Grafana em vez do ruler do Loki — o Grafana já fala com
+   o Loki, já tem motor de regra com `for` e já mostra o histórico da
+   avaliação, e não exige um Alertmanager. Duas regras no ar: "Erro
+   sustentado no log" e "Disco degradando".
+3. **Estender pra `site`** (e decidir se `redis` faz sentido). Continua
+   aberto — `site` é nginx estático, e a dúvida é se log de acesso vale o
+   volume.
+4. **`apply-network-config`** — job de agente pra aplicar os drop-ins de
+   router. Não implementado **de propósito**: ficou em aberto se a config de
+   rede pertence ao Monitor ou ao gerenciador local do roteador. A conclusão
+   provisória (Sessão 4) é que **as interfaces** ficam no Monitor e o
+   **escopo de DHCP/reservas/mapa de intranet** fica local, com o Monitor
+   observando pelo heartbeat. O agente já tem tudo de que precisa (fila
+   durável, reconciliação a cada 60s) pra consumir os dois arquivos.
+5. **Rollout do shim de mail na frota** — o `AGENT_VERSION` já subiu, então
+   cada host se reinstala sozinho pelo `update-agent`. Falta conferir host a
+   host se o `sendmail` foi de fato desviado.
+6. **`disk-health` na frota** — hoje só no `bag`, instalado à mão. Dobrar
+   pra dentro do `/install` é o caminho natural (no-op onde não houver
+   `zpool`/`smartctl`), mas aquele arquivo é campo minado de escape e estava
+   sendo editado por outro chat.
+7. **CI/CD** deixou de ser projeto separado: já publica imagem por SHA de
+   commit e promove no compose. Ver o chat próprio.
+
+## ⚠️ P0 que continua aberto — hardware
+
+O disco **`sdb` do `bag`** segue degradando: os setores realocados foram de
+**734 para 735** entre 24 e 25/08. `raidz1` com paridade simples, três HDD
+de notebook de consumo, e o disco mais novo é o que está morrendo.
+
+A partir da Sessão 4 isso **gera incidente e email sozinho** (regra "Disco
+degradando"), então não depende mais de alguém lembrar de olhar. Mas alertar
+não conserta: continua sendo **substituir**, e com
+`zpool replace tank sdb <novo>` **com o sdb ainda plugado** — assim o ZFS
+pode ler dele durante o resilver se outro disco tropeçar.
+
