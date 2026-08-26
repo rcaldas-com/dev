@@ -66,6 +66,23 @@ services:
     restart: unless-stopped
     ports:
       - "8615:80"   # 8614 ja e' o rcaldas-static
+    # Coletado desde 25/08/2026. Volume medido antes de ligar: 138 linhas/h,
+    # contra 1.753/h do haproxy -- barato.
+    #
+    # A ideia e' justamente ver e podar: a primeira amostra ja mostrou 404
+    # em /contatos, /fale-conosco e /contato, que ou viram redirect ou sao
+    # ruido de scanner.
+    #
+    # LIMITACAO: o IP que aparece aqui e' 172.20.0.1, a ponte do Docker --
+    # ou seja, o HAProxy. Este log diz O QUE foi pedido, nunca POR QUEM.
+    # Pra ter cliente real seria preciso o X-Forwarded-For no log_format do
+    # nginx (muda a imagem). Enquanto isso, quem responde "quem" e' o log
+    # do haproxy, que ja esta coletado.
+    logging:
+      driver: syslog
+      options:
+        syslog-address: "tcp://127.0.0.1:514"
+        tag: "site"
     deploy:
       resources:
         limits:
