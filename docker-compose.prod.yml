@@ -73,11 +73,12 @@ services:
     # em /contatos, /fale-conosco e /contato, que ou viram redirect ou sao
     # ruido de scanner.
     #
-    # LIMITACAO: o IP que aparece aqui e' 172.20.0.1, a ponte do Docker --
-    # ou seja, o HAProxy. Este log diz O QUE foi pedido, nunca POR QUEM.
-    # Pra ter cliente real seria preciso o X-Forwarded-For no log_format do
-    # nginx (muda a imagem). Enquanto isso, quem responde "quem" e' o log
-    # do haproxy, que ja esta coletado.
+    # O IP registrado E' o do cliente real desde a imagem 10b2e35: o
+    # nginx adota como remote_addr o X-Real-IP que o HAProxy ja apurou
+    # (ele troca o src pelo CF-Connecting-IP quando a conexao vem de um IP
+    # da Cloudflare, por ACL). Antes disso o log mostrava 172.20.0.1 -- a
+    # ponte do Docker -- em toda linha, e dizia O QUE foi pedido sem
+    # nunca dizer POR QUEM.
     logging:
       driver: syslog
       options:
