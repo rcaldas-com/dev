@@ -137,7 +137,7 @@ services:
     # processamento por worker. Precisa de imagem nova -- app.py e' assado na
     # imagem (so' os templates sao montados), entao ficar no 1.5 rodaria o
     # worker antigo sem nenhum aviso.
-    image: registry.rcaldas.com/rcaldas/emailer:1.6
+    image: registry.rcaldas.com/rcaldas/emailer:5e14341
     restart: unless-stopped
     env_file: .env
     volumes:
