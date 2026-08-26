@@ -34,6 +34,12 @@ groups:
         annotations:
           summary: '{{ $labels.service }} em {{ $labels.host }} com erro repetido no log'
           description: Linhas de erro acima do limite por 10 minutos seguidos. Veja o log no Grafana pra saber o que e.
+          # Mesmo filtro do `expr` abaixo. O email usa isto pra trazer as
+          # linhas do PROBLEMA em vez das ultimas linhas do servico -- sem
+          # ele, um alerta de haproxy vinha com log de acesso comum no
+          # corpo, sem relacao com o assunto. Manter os dois em sincronia:
+          # mudou o expr, muda aqui.
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0`'
         labels:
           severity: warning
         isPaused: false
@@ -118,6 +124,7 @@ groups:
             pode dizer PASSED e o disco estar ruim -- ele so' reprova quando
             um atributo cruza o limiar, e ate la ja pode haver centenas de
             setores realocados. Olhe os contadores, nao o veredito.
+          logFilter: '|~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]`'
         labels:
           severity: critical
         isPaused: false
