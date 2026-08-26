@@ -140,8 +140,6 @@ services:
     image: registry.rcaldas.com/rcaldas/emailer:5e14341
     restart: unless-stopped
     env_file: .env
-    volumes:
-      - ./emailer/templates:/app/templates:ro
     networks:
       - default
       - mailu_default
