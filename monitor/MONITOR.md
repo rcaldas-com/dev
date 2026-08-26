@@ -492,6 +492,22 @@ O `include` vem **depois** do bloco que declara as chains, senão o
 `flush chain` não acha o alvo e o nft aborta a carga inteira. Erro duro,
 felizmente, não silencioso.
 
+⚠️ **Regra de alerta nova NÃO entra sozinha.** Dashboard recarrega a cada
+30s (`updateIntervalSeconds` no provider), mas **alerting é lido só na
+subida**. Editar `rules.yaml`, commitar e empurrar deixa a regra
+silenciosamente sem efeito — nada no CI/CD cobre isso, porque o Grafana é
+imagem pública com config em bind mount, fora da esteira.
+
+Não precisa reiniciar. A API de provisionamento recarrega em quente:
+
+```
+curl -u admin:SENHA -X POST \
+  https://logs.rcaldas.com/api/admin/provisioning/alerting/reload
+```
+
+Responde `{"message":"Alerting config reloaded"}`. Vale também para
+`dashboards/reload` e `datasources/reload`.
+
 ⚠️ **Duas armadilhas de operação que se repetiram:**
 - **Bind mount de config não recria o container.** `up -d` não vê mudança na
   spec quando só o arquivo montado mudou, e Loki/Grafana leem config só no
