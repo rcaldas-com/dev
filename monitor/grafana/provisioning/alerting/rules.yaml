@@ -178,3 +178,73 @@ groups:
                     # nivel "aceitavel" -- zero ou investiga.
                     type: gt
                     params: [0]
+
+      - uid: rcaldas-loop-rebuild
+        title: Loop de rebuild
+        condition: limiar
+        # Curto: se o mesmo commit ja foi enfileirado 3x, o loop esta
+        # acontecendo AGORA e cada ciclo gasta um worker inteiro. Esperar
+        # mais so' aumenta o desperdicio.
+        for: 5m
+        annotations:
+          summary: 'Mesmo commit sendo reconstruido em loop: {{ $labels.svc }} {{ $labels.sha }}'
+          description: >-
+            O mesmo SHA foi enfileirado para build mais de 2x em 30 minutos.
+            Duas vezes ainda pode ser retry legitimo (build falhou e refez);
+            a partir da terceira costuma ser loop -- promocao que nao fecha,
+            reconciliacao que reabre o pedido, ou build que falha sempre no
+            mesmo ponto. Veja o log do agente no worker pra saber onde para.
+          logFilter: '|= `build automatico enfileirado`'
+        labels:
+          severity: warning
+        isPaused: false
+        noDataState: OK
+        execErrState: OK
+        data:
+          - refId: consulta
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: loki
+            model:
+              refId: consulta
+              datasource: { type: loki, uid: loki }
+              editorMode: code
+              queryType: range
+              # A pipeline escreve no stdout do `web`, que chega no Loki
+              # como service_name="web" -- nao ha banco separado disso, o
+              # log E o historico.
+              expr: >-
+                sum by (svc, sha) (
+                  count_over_time(
+                    {service_name="web"}
+                    |= `build automatico enfileirado`
+                    | regexp `enfileirado: (?P<svc>\S+) (?P<sha>\S+) em (?P<worker>\S+)`
+                    [30m]
+                  )
+                )
+              intervalMs: 60000
+              maxDataPoints: 43200
+          - refId: reduz
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: reduz
+              type: reduce
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: consulta
+              reducer: last
+              settings: { mode: dropNN }
+          - refId: limiar
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: limiar
+              type: threshold
+              datasource: { type: __expr__, uid: __expr__ }
+              expression: reduz
+              conditions:
+                - evaluator:
+                    # "mais de 2x", como pedido: 2 ainda e' retry plausivel.
+                    type: gt
+                    params: [2]

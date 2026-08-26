@@ -1,0 +1,168 @@
+{
+  "uid": "rcaldas-cicd",
+  "title": "CI/CD — transições",
+  "description": "Histórico do que a pipeline decidiu: build enfileirado, promoção e reconciliação. A fonte é o stdout do serviço `web`, que chega no Loki como {service_name=\"web\"} — não há banco separado disso, o log É o histórico. Volume baixo (31 linhas em 7 dias), então a janela pode ser larga sem custo.",
+  "tags": ["rcaldas", "cicd"],
+  "timezone": "America/Sao_Paulo",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Builds enfileirados",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({service_name=\"web\"} |= `build automatico enfileirado` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Promoções",
+      "description": "Soma de `auto-promovido` e `auto-promocao ligada` — as duas são transição de versão em produção.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({service_name=\"web\"} |~ `auto-promovido|auto-promocao ligada` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "SHAs distintos construídos",
+      "description": "Comparar com 'Builds enfileirados': se o total de builds for muito maior que os SHAs distintos, houve reconstrução do mesmo commit — o sintoma de loop.",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "count(count by (sha) (count_over_time({service_name=\"web\"} |= `build automatico enfileirado` | regexp `enfileirado: (?P<svc>\\S+) (?P<sha>\\S+) em (?P<worker>\\S+)` [$__range])))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Reconciliações pedidas",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "none" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "expr": "sum(count_over_time({service_name=\"web\"} |= `reconciliacao pedida` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Transições por tipo",
+      "description": "Barras porque isto é evento discreto, não série contínua — linha sugeriria interpolação entre builds que não existe.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1, "barAlignment": 0 },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "build enfileirado",
+          "expr": "sum(count_over_time({service_name=\"web\"} |= `build automatico enfileirado` [$__interval]))"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "promoção",
+          "expr": "sum(count_over_time({service_name=\"web\"} |~ `auto-promovido|auto-promocao ligada` [$__interval]))"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "legendFormat": "reconciliação",
+          "expr": "sum(count_over_time({service_name=\"web\"} |= `reconciliacao pedida` [$__interval]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "⚠ SHAs construídos mais de uma vez",
+      "description": "O sintoma de loop de rebuild. Um SHA aparecer 2× pode ser retry legítimo (build falhou e refez); 3× ou mais no mesmo período costuma ser loop. O alerta 'Loop de rebuild' dispara acima de 2 em 30min — esta tabela mostra o mesmo dado sem limiar, pra ver a tendência antes de virar alerta.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true } } }],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "topk(20, sum by (svc, sha) (count_over_time({service_name=\"web\"} |= `build automatico enfileirado` | regexp `enfileirado: (?P<svc>\\S+) (?P<sha>\\S+) em (?P<worker>\\S+)` [$__range])) > 1)"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Builds por worker",
+      "description": "Quem está construindo. O `bag` é o worker permanente; ver builds saindo de outro host significa que ele estava indisponível na hora.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "sortBy": [{ "displayName": "Value", "desc": true }] },
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true } } }],
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "queryType": "instant",
+          "format": "table",
+          "expr": "sum by (worker, svc) (count_over_time({service_name=\"web\"} |= `build automatico enfileirado` | regexp `enfileirado: (?P<svc>\\S+) (?P<sha>\\S+) em (?P<worker>\\S+)` [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "logs",
+      "title": "Histórico cru das transições",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 21 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "sortOrder": "Descending", "enableLogDetails": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service_name=\"web\"} |~ `build automatico enfileirado|auto-promovido|auto-promocao ligada|reconciliacao pedida`"
+        }
+      ]
+    }
+  ]
+}
