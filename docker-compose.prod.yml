@@ -8,7 +8,7 @@
 # divergir -- conferido comparando o env real dos containers, var por var.
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:2a0141f
+    image: registry.rcaldas.com/rcaldas/web:3a73ad9
     restart: unless-stopped
     ports:
       - "8611:3000"
