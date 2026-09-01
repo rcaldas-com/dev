@@ -39,7 +39,7 @@ groups:
           # ele, um alerta de haproxy vinha com log de acesso comum no
           # corpo, sem relacao com o assunto. Manter os dois em sincronia:
           # mudou o expr, muda aqui.
-          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email`'
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`'
         labels:
           severity: warning
         isPaused: false
@@ -91,6 +91,17 @@ groups:
               #   REALIMENTACAO: o emailer loga o assunto do email que ele
               #   esta enviando, e o assunto contem "erro no log de". O
               #   alerta estava alertando sobre o proprio email de alerta.
+              # ALSA lib / audio device / ALSA sequencer / pulse) -- 248 em
+              #   7d. fluidsynth tentando abrir audio em maquina sem sessao
+              #   grafica; com estes quatro sobra ZERO linha de fluidsynth.
+              #   Chegou aqui por um caminho que vale registrar: o alerta
+              #   disparou como "us: erro no log de fluidsynth" -- num VPS
+              #   sem placa de som e SEM fluidsynth instalado. Era o log do
+              #   'len', que se anunciava como "localhost" no rsyslog e ia
+              #   TODO pro diretorio do us. Alerta atribuido ao host errado
+              #   e' pior que alerta ruidoso: manda investigar a maquina
+              #   errada. Corrigido na origem (01-hostname.conf); o filtro
+              #   aqui e' pra parte que sobrou, que e' ruido de verdade.
               expr: >-
                 sum by (host, service) (
                   count_over_time(
@@ -106,6 +117,7 @@ groups:
                     != `Failed to scan` != `Failed to exchange Hello messages`
                     != `Error reading SSH protocol banner`
                     != `Processando email` != `SMTP aceitou email`
+                    != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`
                     [5m]
                   )
                 )
