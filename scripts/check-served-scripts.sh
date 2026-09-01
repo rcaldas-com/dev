@@ -52,8 +52,16 @@ verifica() {
   echo "== $nome =="
   [[ -f "$arquivo" ]] || { echo "   arquivo nao existe: $arquivo"; FALHAS=$((FALHAS+1)); return; }
 
-  # 1) backtick solto no template -- pega antes de o build reclamar, e com
-  #    mensagem que diz ONDE.
+  # 1) backtick NAO ESCAPADO no template -- pega antes de o build reclamar,
+  #    e com mensagem que diz ONDE.
+  #
+  #    Escapado (\`) e' legitimo e as vezes necessario: o bash servido
+  #    precisa de backtick literal pra montar regex entre crases do LogQL,
+  #    por exemplo. O que quebra o build e' o backtick CRU, que encerra o
+  #    template literal ali mesmo. A diferenca entre os dois e' a paridade
+  #    das contrabarras imediatamente antes: numero impar = escapado; par
+  #    (inclusive zero) = cru. Nao da' pra testar so' o caractere anterior,
+  #    senao \\` (contrabarra escapada + crase crua) passaria batido.
   local achados
   achados=$(python3 - "$arquivo" <<'PYEOF'
 import sys
@@ -64,8 +72,17 @@ except ValueError:
     raise SystemExit
 corpo = src[i + len('return `'):j]
 for n, linha in enumerate(corpo.split('\n'), 1):
-    if '`' in linha:
-        print(f"   linha {n}: {linha.strip()[:76]}")
+    for p, ch in enumerate(linha):
+        if ch != '`':
+            continue
+        barras = 0
+        k = p - 1
+        while k >= 0 and linha[k] == '\\':
+            barras += 1
+            k -= 1
+        if barras % 2 == 0:
+            print(f"   linha {n} col {p+1}: {linha.strip()[:70]}")
+            break
 PYEOF
 )
   if [[ -n "$achados" ]]; then
@@ -97,7 +114,7 @@ PYEOF
   fi
 }
 
-if [[ $# -gt 0 ]]; then verifica "$1"; else verifica init; verifica install; fi
+if [[ $# -gt 0 ]]; then verifica "$1"; else verifica init; verifica install; verifica setup-backup-runner; fi
 
 echo
 if [[ $FALHAS -eq 0 ]]; then echo "tudo ok"; else echo "$FALHAS verificacao(oes) falhou(ram)"; fi

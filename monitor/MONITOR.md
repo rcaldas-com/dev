@@ -515,6 +515,80 @@ Responde `{"message":"Alerting config reloaded"}`. Vale também para
 - **Trocar o `uid` de um datasource já provisionado** põe o Grafana em loop de
   restart. Resolve-se com `deleteDatasources` no mesmo arquivo.
 
+## Sessão 5 — backup do `r64`, rota da frota e o ruído dos emails
+
+### Três bugs empilhados no backup do `r64`, cada um escondendo o próximo
+
+O alarme dizia só "backup hora falhou". Por baixo:
+
+1. **Túnel apontando pro vazio.** O agente sobe junto com o boot e abriu o
+   túnel **16s depois** dele (`r64`: boot 02:20:51, túnel 02:21:07) — antes do
+   sshd estar escutando. A detecção da porta local voltou vazia, caiu no
+   fallback `22`, e ficou `7705 → 127.0.0.1:22`, onde não há nada. A
+   reconciliação **nunca corrigia**, porque só comparava a porta *remota*, que
+   estava certa. Resultado: túnel "de pé" no Monitor e inútil na prática.
+   Corrigido nos dois lados — sem fallback cego (adia pro próximo ciclo) e a
+   reconciliação passou a comparar também o **alvo local**.
+2. **Host key ausente.** `root` do `bag` não tinha `[us.rcaldas.com]:7705` no
+   `known_hosts`; sem tty o ssh recusa e sai **255**.
+3. **Chave errada sendo aceita.** A chave `root@bag` estava autorizada com
+   `command="/var/opt/wrapper.sh"` (resíduo do zxnet — arquivo inexistente).
+   O ssh oferecia ela **antes** da chave do runner, ela era aceita, o wrapper
+   falhava e o rsync morria com **exit 12** sem dizer que o problema era a
+   chave escolhida. Daí `IdentitiesOnly=yes` nas configs geradas.
+
+O `command="/var/opt/wrapper.sh"` estava em **3 chaves em 6 hosts**
+(`us`, `bag`, `len`, `r64`, `tp`, `lev`) — removido, com backup
+`authorized_keys.bak-wrapper-*`. Faltam `m2` e `d7` (offline).
+
+### Rota do backup: DDNS primeiro, túnel como reserva
+
+O plano mandava **todo** host não-self pelo relay em `us.rcaldas.com`. Para
+hosts da mesma LAN isso atravessa o Atlântico duas vezes por byte. Medido:
+
+| caminho | RTT | dry-run de `/etc` |
+|---|---|---|
+| `r64.rcaldas.com` (DDNS, IPv6) | **2,6 ms** | **2,5 s** |
+| IP de LAN (`192.168.1.37`) | 2,9 ms | — |
+| relay `us` | 127 ms (×2 = ~254) | 5,7 s |
+
+**Por que o nome DDNS já é o caminho de LAN:** em IPv6 não há NAT, então o
+endereço global vale por dentro e por fora. `bag` e `r64` estão no mesmo
+`/64`; `ip -6 route get` devolve `dev <iface> proto ra` **sem `via`** e o
+`ip -6 neigh` resolve o MAC — o pacote não chega no roteador do ISP.
+
+Fica como **primeiro** endereço, com o túnel de reserva, porque o prefixo do
+ISP rotaciona (visto `…:680e:` em 29/ago e `…:8e05:` em 01/set): na janela
+até o AAAA atualizar, o direto falha e o túnel salva.
+
+⚠️ **Duas armadilhas do `ProxyCommand`, ambas descobertas testando:**
+- **O `sh -c` não é redundante.** O ssh executa o ProxyCommand com `exec` na
+  frente; sem shell explícito o `exec` substitui o shell pelo primeiro
+  comando e, quando ele falha, **não sobrou ninguém pra avaliar o `||`** — o
+  fallback nunca acontece, e o sintoma é um `kex_exchange_identification`
+  genérico.
+- **`socat`, não `nc`.** O `netcat-traditional` (o que está instalado) é
+  **só IPv4** e não resolve nome que só tem AAAA — exatamente o caso dos
+  nomes DDNS. Falha com `forward host lookup failed`.
+
+### Emails de backup: por que não davam pra identificar nada
+
+- **Assunto igual pras três falhas.** A mensagem não dizia o alvo, então
+  `bag`, `r64` e `us` geravam o mesmo `emailSubject` → dois emails idênticos
+  no mesmo minuto.
+- **Chave do incidente sem o intervalo** (`backup-<host>`). O `dia` passando
+  às 03:30 **resolvia** o incidente que o `hora` abriu às 00:00 — é essa a
+  origem do "resolvido com horário anterior ao alerta".
+- **Trecho de log genérico.** O `logSelector` era o syslog inteiro do host.
+  Agora o alarme carrega um `logFilter` próprio (sanitizado no servidor) e o
+  email traz as linhas do `rsnapshot` daquele `.conf`.
+
+### `mes` falhando todo dia 1º é esperado
+
+`ERROR: Did not find previous interval max (…/semana.N)` só quer dizer que a
+corrente semanal ainda não acumulou `retain semana` níveis. Se resolve
+sozinho; já tratado no runner (loga, não alarma).
+
 ## Pendências levantadas na Sessão 2
 
 ### P0 — `bag`: disco `sdb` falhando no pool `tank`
