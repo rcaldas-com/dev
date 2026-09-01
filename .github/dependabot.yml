@@ -1,0 +1,34 @@
+# Atualizacao das imagens PUBLICAS (grafana, loki, alloy, redis, mongo,
+# nginx, registry, mailu). As nossas nao entram aqui -- essas vem da
+# pipeline, que builda a partir do commit de cada submodulo.
+#
+# Ecossistema 'docker-compose', nao 'docker': o 'docker' le Dockerfile, e o
+# que precisamos ler e' a linha 'image:' do compose de producao.
+#
+# O ciclo so' fecha porque existe o reconciliador (Fase 5 do web/CICD.md):
+# o merge do PR muda o compose, o Monitor percebe a divergencia entre o git
+# e o que o host declara, e pede o deploy. Sem ele o bump ficaria parado no
+# git ate alguma promocao nao relacionada carregar a mudanca de carona.
+#
+# Semanal e agrupado: um PR por patch de imagem vira ruido que se aprende a
+# ignorar, que da no mesmo que nao avisar.
+version: 2
+updates:
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 5
+    groups:
+      imagens:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: deps
+    ignore:
+      # As nossas imagens sao promovidas pela pipeline, com tag = sha curto.
+      # O bot nao tem o que dizer sobre elas e so' geraria conflito.
+      - dependency-name: registry.rcaldas.com/*
