@@ -38,7 +38,7 @@ services:
     depends_on:
       - redis
   car:
-    image: registry.rcaldas.com/rcaldas/car:3.5
+    image: registry.rcaldas.com/rcaldas/car:7ff4d44
     restart: unless-stopped
     ports:
       - "8612:3000"
