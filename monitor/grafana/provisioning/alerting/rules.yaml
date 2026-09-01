@@ -39,7 +39,7 @@ groups:
           # ele, um alerta de haproxy vinha com log de acesso comum no
           # corpo, sem relacao com o assunto. Manter os dois em sincronia:
           # mudou o expr, muda aqui.
-          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0`'
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email`'
         labels:
           severity: warning
         isPaused: false
@@ -61,14 +61,51 @@ groups:
                 uid: loki
               editorMode: code
               queryType: range
+              # CADA EXCLUSAO ABAIXO FOI MEDIDA, nao adivinhada. Em 7 dias o
+              # filtro antigo casava 5.267 linhas no us e disparava 8 vezes
+              # em 2 dias; com estas, casa 779 e dispara 1. O que sobra e'
+              # o que vale acordar alguem.
+              #
+              # `| detected_level!~info|debug` -- o containerd loga
+              #   `level=info msg="skip loading plugin" error="..."`: a
+              #   palavra error e' CAMPO, nao severidade. Sozinho isso eram
+              #   988 de 1.003 linhas dele.
+              #   ARMADILHA: detected_level e' structured metadata, entao
+              #   so' funciona como filtro de PIPELINE. No seletor
+              #   ({...,detected_level!~"info"}) ele e' silenciosamente
+              #   IGNORADO -- medido: 1003 antes, 1003 depois.
+              #
+              # resolver failed to query -- dockerd, 1.489 linhas. DNS
+              #   embutido do Docker falhando pra um container so'. Ruido
+              #   cronico como alerta, mas vale investigar a causa a parte.
+              # SSL handshake failure -- haproxy, 1.524. Sao scanners e a
+              #   propria borda da Cloudflare sondando com SNI que nao
+              #   casa. Nao ha o que fazer com cada uma.
+              # Rejected send message -- dbus, negacao de politica normal.
+              # Connection reset by peer -- novnc/wssh, cliente sumiu.
+              # Failed TLS handshake / Lost device connection / Failed to
+              #   scan / Failed to exchange Hello -- syncthing, churn de
+              #   conexao entre os proprios hosts.
+              # Error reading SSH protocol banner -- wssh, idem.
+              # Processando email / SMTP aceitou email -- LOOP DE
+              #   REALIMENTACAO: o emailer loga o assunto do email que ele
+              #   esta enviando, e o assunto contem "erro no log de". O
+              #   alerta estava alertando sobre o proprio email de alerta.
               expr: >-
                 sum by (host, service) (
                   count_over_time(
                     {job=~"remote-logs|host-journal|host-files"}
                     |~ `(?i)(error|erro|fatal|critical|exception|traceback)`
-                    != `Cannot polyfill`
-                    != `@napi-rs/canvas`
-                    != `Erros: 0`
+                    | detected_level!~`info|debug`
+                    != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0`
+                    != `[resolver] failed to query external DNS server`
+                    != `SSL handshake failure`
+                    != `Rejected send message`
+                    != `Connection reset by peer`
+                    != `Failed TLS handshake` != `Lost device connection`
+                    != `Failed to scan` != `Failed to exchange Hello messages`
+                    != `Error reading SSH protocol banner`
+                    != `Processando email` != `SMTP aceitou email`
                     [5m]
                   )
                 )
