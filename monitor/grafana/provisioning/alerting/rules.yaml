@@ -217,7 +217,26 @@ groups:
               expr: >-
                 sum by (host) (
                   count_over_time(
-                    {job=~"remote-logs|host-journal"}
+                    # service!="emailer" -- ANTI-LOOP, no SELETOR e nao como
+                    # `!=` de linha, porque aqui da' pra cortar a fonte
+                    # inteira em vez de adivinhar prefixos de mensagem.
+                    #
+                    # O emailer roda no us e loga o payload de CADA email de
+                    # incidente que envia -- payload que inclui o trecho de
+                    # log do incidente. Um alerta de disco degradado no bag
+                    # virava, minutos depois, um alerta de disco degradado
+                    # no US: a linha casava `vdev_state=UNAVAIL` porque ela
+                    # CONTEM o alerta do bag, e o host do rotulo passava a
+                    # ser quem enviou o email, nao quem tem o disco.
+                    #
+                    # Mesma classe de erro do log do 'len' atribuido ao us:
+                    # o alerta aponta pra maquina errada, que e' pior que
+                    # ruido -- manda investigar disco num VPS que nao tem
+                    # o pool. Medido em 14 dias: as UNICAS fontes que casam
+                    # esta regra sao bag/syslog (201, reais) e us/emailer
+                    # (2, o eco). Cortar o emailer nao perde nada real --
+                    # ele nao tem disco monitorado por aqui.
+                    {job=~"remote-logs|host-journal", service!="emailer"}
                     |~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]|vdev_state=(UNAVAIL|FAULTED|DEGRADED|REMOVED)|state: (DEGRADED|FAULTED|UNAVAIL)`
                     [3h]
                   )
