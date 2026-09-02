@@ -173,7 +173,7 @@ groups:
             pode dizer PASSED e o disco estar ruim -- ele so' reprova quando
             um atributo cruza o limiar, e ate la ja pode haver centenas de
             setores realocados. Olhe os contadores, nao o veredito.
-          logFilter: '|~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]`'
+          logFilter: '|~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]|vdev_state=(UNAVAIL|FAULTED|DEGRADED|REMOVED)|state: (DEGRADED|FAULTED|UNAVAIL)`'
         labels:
           severity: critical
         isPaused: false
@@ -193,11 +193,32 @@ groups:
               # Casa o que o scripts/disk-health.sh emite como problema:
               # erro contabilizado pelo ZFS, ou contador SMART != 0.
               # `realoc=0` nao casa porque o primeiro digito tem que ser 1-9.
+              #
+              # vdev_state / state: -- POOL DEGRADADO SEM NENHUM ERRO.
+              # Faltava, e custou um caso real: no reboot do 'bag' em
+              # 01/09 um disco trocou de sdd pra sda, o ZFS nao achou o
+              # label e o pool ficou DEGRADED por ~50min. Nada alertou.
+              #
+              # O motivo e' que os contadores acima ficaram todos em ZERO:
+              # `errors: No known data errors`, SMART tudo PASSED. Nao
+              # havia erro de leitura -- havia um device AUSENTE. Contador
+              # de erro nao cobre indisponibilidade, e essa e' justamente
+              # a falha que deixa o raidz1 sem redundancia.
+              #
+              # As duas fontes entram porque tem tempos diferentes: o zed
+              # emite `vdev_state=` no instante do evento (22:21:48), o
+              # disk-health emite `state:` no poll horario (22:26:39). A
+              # primeira alerta rapido; a segunda garante que continua
+              # alertando enquanto durar, mesmo que o evento se perca.
+              # ONLINE fica de fora de proposito -- e' a recuperacao, e e'
+              # o que fecha o incidente.
+              # Medido em 14 dias: +35 linhas, todas eventos reais de
+              # disco (a troca do sdb em 29/08 e este caso). Zero ruido.
               expr: >-
                 sum by (host) (
                   count_over_time(
                     {job=~"remote-logs|host-journal"}
-                    |~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]`
+                    |~ `zfs erros:|realoc=[1-9]|pendentes=[1-9]|incorrigiveis=[1-9]|vdev_state=(UNAVAIL|FAULTED|DEGRADED|REMOVED)|state: (DEGRADED|FAULTED|UNAVAIL)`
                     [3h]
                   )
                 )
