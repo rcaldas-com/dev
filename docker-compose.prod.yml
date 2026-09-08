@@ -9,6 +9,12 @@
 services:
   web:
     image: registry.rcaldas.com/rcaldas/web:7830091
+    # uid/gid do dono dos arquivos sincronizados (rcaldas:adm). O /init
+    # serve authorized_keys lendo /var/rcaldas/live/home ao vivo, e esse
+    # arquivo e 600 do dono -- e o symlink que o sshd do us usa, entao
+    # afrouxar a permissao dele arriscaria o acesso ao servidor. Rodar
+    # com o uid certo resolve sem tocar em nada disso.
+    user: "8484:4"
     restart: unless-stopped
     ports:
       - "8611:3000"
