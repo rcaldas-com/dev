@@ -39,7 +39,7 @@ groups:
           # ele, um alerta de haproxy vinha com log de acesso comum no
           # corpo, sem relacao com o assunto. Manter os dois em sincronia:
           # mudou o expr, muda aqui.
-          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`'
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)` != `Error in sys.excepthook` != `Original exception was`'
         labels:
           severity: warning
         isPaused: false
@@ -102,6 +102,22 @@ groups:
               #   e' pior que alerta ruidoso: manda investigar a maquina
               #   errada. Corrigido na origem (01-hostname.conf); o filtro
               #   aqui e' pra parte que sobrou, que e' ruido de verdade.
+              # Error in sys.excepthook / Original exception was -- bug
+              #   cosmetico do cinnamon-screensaver (linuxmint/cinnamon-
+              #   screensaver#384, fechado sem fix documentado): a mensagem
+              #   nunca traz a excecao de verdade, so' o cabecalho repetido
+              #   6x na mesma fracao de segundo. Medido: dispara junto do
+              #   UNLOCK -- no bag, precedido por "cinnamon-screensaver-
+              #   pam-helper: setuid failed: Operation not permitted", que
+              #   e' esperado no fluxo moderno de PAM (o helper roda sem
+              #   setuid de proposito, 0755 igual ao pacote oficial --
+              #   conferido no .deb do Debian trixie, nao e'
+              #   misconfiguration local). A tela destravou normalmente nos
+              #   dois casos observados. 280 linhas em 14d (bag 82, tp 192,
+              #   us 6 -- o eco de sempre, ja coberto por esta mesma
+              #   exclusao). Corta pelas DUAS frases, nao pelo processo
+              #   inteiro, pra nao engolir uma mensagem real do
+              #   screensaver se um dia existir.
               expr: >-
                 sum by (host, service) (
                   count_over_time(
@@ -118,6 +134,7 @@ groups:
                     != `Error reading SSH protocol banner`
                     != `Processando email` != `SMTP aceitou email`
                     != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`
+                    != `Error in sys.excepthook` != `Original exception was`
                     [5m]
                   )
                 )
