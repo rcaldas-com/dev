@@ -8,7 +8,7 @@
 # divergir -- conferido comparando o env real dos containers, var por var.
 services:
   web:
-    image: registry.rcaldas.com/rcaldas/web:7a5383f
+    image: registry.rcaldas.com/rcaldas/web:1c8ac1c
     # uid/gid do dono dos arquivos sincronizados (rcaldas:adm). O /init
     # serve authorized_keys lendo /var/rcaldas/live/home ao vivo, e esse
     # arquivo e 600 do dono -- e o symlink que o sshd do us usa, entao
