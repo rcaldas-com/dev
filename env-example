@@ -47,6 +47,12 @@ WALLET_URL=/wallet
 # STELLAR_INITIAL_BALANCE=2                     # XLM ao criar conta nova
 # STELLAR_RESERVE_TOPUP=1.5                     # XLM de recarga p/ trustline
 # BTC_API=https://blockstream.info/api          # aponte p/ Esplora próprio se quiser
+# Segredo de POST /api/internal/tick (header x-internal-secret) — chamado
+# por uma rotina externa periódica (fora do wallet, Next.js não tem cron
+# embutido) pra manter o disjuntor de cotação com leitura recente mesmo
+# sem ninguém abrir o dashboard, e capturar o histórico de valor da
+# carteira. Sem definir, o endpoint recusa tudo com 401 (fail closed).
+INTERNAL_TICK_SECRET=
 
 # ═══════════════ DigitaR (OCR via IA) ═══════════════
 # Sem a chave, a extração de texto do DigitaR falha em tempo de execução.
