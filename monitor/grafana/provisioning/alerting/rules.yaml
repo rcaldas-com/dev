@@ -39,7 +39,7 @@ groups:
           # ele, um alerta de haproxy vinha com log de acesso comum no
           # corpo, sem relacao com o assunto. Manter os dois em sincronia:
           # mudou o expr, muda aqui.
-          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)` != `Error in sys.excepthook` != `Original exception was`'
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)` != `Error in sys.excepthook` != `Original exception was` != `Request attribute has encountered an unlikely error`'
         labels:
           severity: warning
         isPaused: false
@@ -118,6 +118,21 @@ groups:
               #   exclusao). Corta pelas DUAS frases, nao pelo processo
               #   inteiro, pra nao engolir uma mensagem real do
               #   screensaver se um dia existir.
+              # Request attribute has encountered an unlikely error -- BLE
+              #   reconectando. No tp, o mouse MX Vertical (logitech-hidpp,
+              #   endereco 48:ad:9a:...) reconecta ao acordar do sleep de
+              #   energia do proprio mouse (visto 31x em 7d no kernel log),
+              #   e a cada reconexao o bluetoothd tenta reler todo o perfil
+              #   GATT (battery, PNP_ID, HID report reference) antes da
+              #   conexao estabilizar -- cada leitura falha com este erro
+              #   generico do protocolo ATT ("Unlikely Error"). O mouse
+              #   funciona normalmente depois: o kernel confirma
+              #   input/hidraw0 registrado nas mesmas linhas. So' 42
+              #   linhas em 14d (tp), concentradas em rajadas curtas -- e'
+              #   o que fez o incidente do dia 06/09 disparar sozinho
+              #   (value=20 numa unica janela de 5min). Frase generica,
+              #   nao os tres arquivos (hog-lib.c/deviceinfo.c/battery.c):
+              #   e' a unica parte comum as tres formas da mensagem.
               expr: >-
                 sum by (host, service) (
                   count_over_time(
@@ -135,6 +150,7 @@ groups:
                     != `Processando email` != `SMTP aceitou email`
                     != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`
                     != `Error in sys.excepthook` != `Original exception was`
+                    != `Request attribute has encountered an unlikely error`
                     [5m]
                   )
                 )
