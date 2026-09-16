@@ -1,121 +1,98 @@
 #!/bin/bash
-# Valida os scripts bash que /init e /install SERVEM, sem subir o Next.
+# Valida os scripts bash que o app SERVE (/init, /install, ...).
 #
-# POR QUE EXISTE
-# -------------
-# Aquele bash mora dentro de um template literal de JS, entao passa por um
-# escape antes de chegar no host. Tres classes de erro ja quebraram
-# producao a partir dai, e nenhuma aparece lendo o codigo:
+# O QUE MUDOU
+# -----------
+# Ate 12/09/2026 esses scripts moravam dentro de template literal de JS, e
+# este checker existia pra pegar os acidentes que isso causava: crase em
+# comentario encerrando o literal, `${VAR}` do bash lido como interpolacao,
+# `\n` virando quebra de linha de verdade. Sete quebras de build pelo mesmo
+# motivo.
 #
-# 1. BACKTICK em comentario. Encerra o template no meio e quebra o
-#    `next build` inteiro. Aconteceu QUATRO vezes -- sempre no mesmo tipo
-#    de comentario explicativo, do tipo "o `set -e` mata o script".
-# 2. `\n` que vira NEWLINE de verdade. Um printf de awk com o formato
-#    quebrado no meio da string vira erro de sintaxe do awk, em runtime,
-#    num host remoto.
-# 3. `${VAR}` do bash lido como interpolacao de JS -- ou some, ou quebra o
-#    build.
+# Agora o bash mora em web/served-scripts/*.sh -- arquivo de verdade, sem
+# camada de escape. Aquela classe inteira de erro deixou de existir, e o
+# que sobra pra verificar e' outra coisa:
 #
-# O que este script faz e' o que o CLAUDE.md manda: renderizar a saida e
-# conferir, em vez de olhar o fonte.
-#
-# Uso:
-#   scripts/check-served-scripts.sh          # roda os dois
-#   scripts/check-served-scripts.sh install  # so' um
+#   1. o .sh e' bash valido
+#   2. todo marcador @@NOME@@ do .sh tem valor no route que o serve
+#      (senao o servedScript lanca -- melhor descobrir aqui que em runtime)
+#   3. nenhum .sh ficou orfao, sem route que o sirva
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WEB="$REPO/web"
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+DIR="$REPO/web/served-scripts"
+APP="$REPO/web/app"
 FALHAS=0
 
-cat > "$TMP/render.js" <<'JSEOF'
-const fs = require('fs');
-const src = fs.readFileSync(process.argv[2], 'utf8');
-const ini = src.indexOf('return `#!/usr/bin/env bash');
-const fim = src.lastIndexOf('`;');
-if (ini < 0 || fim < 0) { console.error('template nao encontrado'); process.exit(1); }
-const corpo = src.slice(ini + 'return `'.length, fim);
-// Descobre sozinho o que o template interpola, pra nao quebrar quando
-// alguem adiciona uma variavel nova.
-const nomes = [...new Set([...corpo.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)].map(m => m[1]))];
-try {
-  const out = new Function(...nomes, 'return `' + corpo + '`;')(...nomes.map(n => 'X_' + n));
-  fs.writeFileSync(process.argv[3], out);
-  console.log(out.split('\n').length + ' linhas');
-} catch (e) { console.error('ERRO: ' + e.message); process.exit(1); }
-JSEOF
+[[ -d "$DIR" ]] || { echo "diretorio nao existe: $DIR"; exit 1; }
 
-verifica() {
-  local nome="$1" arquivo="$WEB/app/$1/route.ts" saida="$TMP/$1.sh"
-  echo "== $nome =="
-  [[ -f "$arquivo" ]] || { echo "   arquivo nao existe: $arquivo"; FALHAS=$((FALHAS+1)); return; }
+# partials/ sao fragmentos usados por outras rotas (script de dump,
+# preexec) -- nao tem route proprio, entao so' a validacao de sintaxe vale.
+for sh in "$DIR"/*.sh "$DIR"/partials/*.sh; do
+  [[ -e "$sh" ]] || continue
+  nome=$(basename "$sh")
+  rota="${nome%.sh}"
+  parcial=no; [[ "$sh" == */partials/* ]] && parcial=sim
+  echo "== ${parcial:+}$([[ $parcial == sim ]] && echo 'partials/')$nome =="
 
-  # 1) backtick NAO ESCAPADO no template -- pega antes de o build reclamar,
-  #    e com mensagem que diz ONDE.
-  #
-  #    Escapado (\`) e' legitimo e as vezes necessario: o bash servido
-  #    precisa de backtick literal pra montar regex entre crases do LogQL,
-  #    por exemplo. O que quebra o build e' o backtick CRU, que encerra o
-  #    template literal ali mesmo. A diferenca entre os dois e' a paridade
-  #    das contrabarras imediatamente antes: numero impar = escapado; par
-  #    (inclusive zero) = cru. Nao da' pra testar so' o caractere anterior,
-  #    senao \\` (contrabarra escapada + crase crua) passaria batido.
-  local achados
-  achados=$(python3 - "$arquivo" <<'PYEOF'
-import sys
-src = open(sys.argv[1]).read()
-try:
-    i = src.index('return `#!/usr/bin/env bash'); j = src.rindex('`;')
-except ValueError:
-    raise SystemExit
-corpo = src[i + len('return `'):j]
-for n, linha in enumerate(corpo.split('\n'), 1):
-    for p, ch in enumerate(linha):
-        if ch != '`':
-            continue
-        barras = 0
-        k = p - 1
-        while k >= 0 and linha[k] == '\\':
-            barras += 1
-            k -= 1
-        if barras % 2 == 0:
-            print(f"   linha {n} col {p+1}: {linha.strip()[:70]}")
-            break
-PYEOF
-)
-  if [[ -n "$achados" ]]; then
-    echo "   BACKTICK dentro do template (encerra o literal e quebra o build):"
-    echo "$achados"
+  if bash -n "$sh" 2>/tmp/err_ck; then
+    echo "   bash -n: ok ($(wc -l < "$sh") linhas)"
+  else
+    echo "   BASH INVALIDO:"; sed 's/^/     /' /tmp/err_ck
+    FALHAS=$((FALHAS+1)); continue
+  fi
+
+  if command -v shellcheck >/dev/null 2>&1; then
+    # Marcador @@X@@ nao e' sintaxe de shell; o -e SC1009/SC1073 evita
+    # ruido onde ele aparece no lugar de um valor.
+    if shellcheck -S error -e SC1009,SC1073,SC1072,SC2154 "$sh" >/tmp/err_sc 2>&1; then
+      echo "   shellcheck: ok"
+    else
+      echo "   shellcheck apontou:"; head -12 /tmp/err_sc | sed 's/^/     /'
+      FALHAS=$((FALHAS+1))
+    fi
+  fi
+
+  # Marcador que aparece 2+ vezes NAO e' erro por si so' (RET_DIA, APP_URL
+  # etc sao seguros -- valor de uma linha so'), mas e' o padrao exato que
+  # quebrou limpa-orfaos.sh: um marcador dentro de um COMENTARIO, com
+  # valor de VARIAS linhas, faz as linhas seguintes "vazarem" do comentario
+  # e virarem bash de verdade. servedScript() faz substituicao de texto
+  # literal -- nao sabe o que e' comentario nem quantas linhas o valor tem.
+  # So' aviso (nao falha o build): cabe a quem edita julgar se o valor
+  # daquele marcador pode ter mais de uma linha.
+  repetidos=""
+  for m in $(grep -oE '@@[A-Za-z_][A-Za-z0-9_]*@@' "$sh" | sort -u); do
+    n=$(grep -oF "$m" "$sh" | wc -l)
+    [[ "$n" -gt 1 ]] && repetidos="$repetidos $m(${n}x)"
+  done
+  [[ -n "$repetidos" ]] && echo "   AVISO -- marcador repetido, confira se o valor e' sempre 1 linha:$repetidos"
+
+  if [[ "$parcial" == sim ]]; then
+    echo "   parcial: sem route proprio (usado por outra rota)"
+    continue
+  fi
+
+  route="$APP/$rota/route.ts"
+  if [[ ! -f "$route" ]]; then
+    echo "   ORFAO: nenhum route em app/$rota/route.ts serve este arquivo"
+    FALHAS=$((FALHAS+1)); continue
+  fi
+
+  # Marcador usado no .sh que o route nao fornece = erro em runtime.
+  faltando=""
+  for m in $(grep -oE '@@[A-Za-z_][A-Za-z0-9_]*@@' "$sh" | tr -d '@' | sort -u); do
+    grep -q "\b$m\b" "$route" || faltando="$faltando $m"
+  done
+  if [[ -n "$faltando" ]]; then
+    echo "   MARCADOR SEM VALOR no route:$faltando"
     FALHAS=$((FALHAS+1))
+  else
+    echo "   marcadores: todos supridos por app/$rota/route.ts"
   fi
+done
 
-  # 2) renderiza como o JS renderiza
-  local n
-  if ! n=$(docker run --rm -v "$WEB:/w:ro" -v "$TMP:/o" node:22-alpine \
-             node /o/render.js "/w/app/$nome/route.ts" "/o/$nome.sh" 2>&1); then
-    echo "   NAO RENDERIZA: $n"
-    FALHAS=$((FALHAS+1)); return
-  fi
-  echo "   renderiza: $n"
-
-  # 3) o bash resultante e' valido?
-  if ! bash -n "$saida" 2>"$TMP/err"; then
-    echo "   BASH INVALIDO:"; sed 's/^/     /' "$TMP/err"
-    FALHAS=$((FALHAS+1)); return
-  fi
-  echo "   bash -n: ok"
-
-  # 4) sobrou marca de escape mal resolvido? `${'$'}` que nao virou ${
-  if grep -n "\${'\\\$'}" "$saida" >/dev/null 2>&1; then
-    echo "   ESCAPE NAO RESOLVIDO: sobrou \${'\$'} literal na saida"
-    FALHAS=$((FALHAS+1))
-  fi
-}
-
-if [[ $# -gt 0 ]]; then verifica "$1"; else verifica init; verifica install; verifica setup-backup-runner; fi
-
+rm -f /tmp/err_ck /tmp/err_sc
 echo
 if [[ $FALHAS -eq 0 ]]; then echo "tudo ok"; else echo "$FALHAS verificacao(oes) falhou(ram)"; fi
 exit $FALHAS
