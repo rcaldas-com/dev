@@ -124,7 +124,7 @@ services:
       - redis
       - ccxt
   ccxt:
-    image: registry.rcaldas.com/rcaldas/ccxt:fa95ad9
+    image: registry.rcaldas.com/rcaldas/ccxt:d7cfbda
     restart: unless-stopped
     environment:
       # OKX primeiro (maior volume que Kraken); Binance em segundo — o VPS
