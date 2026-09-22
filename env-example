@@ -61,10 +61,19 @@ OCR_MODEL=gpt-4.1
 
 # ═══════════════ SMTP (emailer) ═══════════════
 # Sem SMTP_HOST o emailer roda em dry-run: imprime o email no log e não envia.
+# Sem usuário/senha de proposito: em produção o relay é o Mailu, na mesma
+# rede do compose — autenticação não entra em jogo.
 SMTP_HOST=
 SMTP_PORT=587
-SMTP_USER=
-SMTP_PASS=
+SMTP_FROM=
+# true liga STARTTLS. Vazio/false para relay interno sem TLS.
+SMTP_TLS=
+
+# ═══════════════ Upload (/upload, links curtos) ═══════════════
+# Diretório onde os arquivos enviados por /upload ficam no disco do host
+# (fora do S3 — é o caminho usado por /[slug] e pelos links curtos).
+# Vazio = ./.data/upload dentro do projeto (bom o suficiente pra dev).
+UPLOAD_ROOT=
 
 # ═══════════════ Log centralizado (Grafana) ═══════════════
 # Senha do admin do Grafana em logs.rcaldas.com. É a única credencial da
@@ -81,6 +90,40 @@ GF_SECURITY_ADMIN_PASSWORD=
 LOG_ALERT_TOKEN=
 # Só sobrescreva se o app mudar de hostname.
 # MONITOR_WEBHOOK_URL=https://web.rcaldas.com/api/log-alert
+
+# ═══════════════ Backup offsite (restic) ═══════════════
+# Bucket SEPARADO de proposito do S3_* de produção acima, que guarda o dado
+# a ser copiado — nunca o mesmo bucket que guarda o que se está copiando.
+BACKUP_S3_HOST=
+BACKUP_S3_KEY=
+BACKUP_S3_SECRET=
+
+# ═══════════════ Cloudflare (DDNS centralizado + purge de cache) ═══════════════
+# Atualiza o AAAA de cada host com ddnsEnabled=true (ver lib/monitor.ts).
+CF_TOKEN=
+CF_ZONE_ID=
+# Token SEPARADO do CF_TOKEN acima — escopo de purge de cache é diferente
+# do de DNS, e o CF_TOKEN do DDNS não cobre isso (testado: dá Authentication
+# error).
+CF_PURGE_TOKEN=
+
+# ═══════════════ GitHub (CI/CD) ═══════════════
+# lib/promote.ts usa isso pra escrever a tag nova no docker-compose.prod.yml
+# quando um build é promovido.
+GITHUB_TOKEN=
+
+# ═══════════════ Mailu (provisionamento de conta de email) ═══════════════
+# /init cria uma conta forward-only no Mailu via este endpoint, autenticado
+# com PROVISION_TOKEN abaixo — o admin token do Mailu nunca sai daqui.
+MAILU_API_URL=http://admin:8080/api/v1
+MAILU_API_TOKEN=
+MAILU_FORWARD_TO=
+
+# ═══════════════ Provisionamento (/init, /install) ═══════════════
+# Segredo compartilhado que autoriza /init a chamar /api/mailu-account —
+# mesmo nível de confiança que authorized_keys já tem (quem busca /init já
+# recebe chave SSH).
+PROVISION_TOKEN=
 
 # ═══════════════ Ambiente ═══════════════
 NODE_ENV=development
