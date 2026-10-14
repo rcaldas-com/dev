@@ -39,7 +39,7 @@ groups:
           # ele, um alerta de haproxy vinha com log de acesso comum no
           # corpo, sem relacao com o assunto. Manter os dois em sincronia:
           # mudou o expr, muda aqui.
-          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)` != `Error in sys.excepthook` != `Original exception was` != `Request attribute has encountered an unlikely error`'
+          logFilter: '|~ `(?i)(error|erro|fatal|critical|exception|traceback)` | detected_level!~`info|debug` != `Cannot polyfill` != `@napi-rs/canvas` != `Erros: 0` != `[resolver] failed to query external DNS server` != `SSL handshake failure` != `Rejected send message` != `Connection reset by peer` != `Failed TLS handshake` != `Lost device connection` != `Failed to scan` != `Failed to exchange Hello messages` != `Error reading SSH protocol banner` != `Processando email` != `SMTP aceitou email` != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)` != `Error in sys.excepthook` != `Original exception was` != `Request attribute has encountered an unlikely error` != `relays.syncthing.net/endpoint` | programname!~`rcaldas-agent #.*` != `session healthcheck failed` != `.dpkg-tmp`'
         labels:
           severity: warning
         isPaused: false
@@ -133,6 +133,35 @@ groups:
               #   (value=20 numa unica janela de 5min). Frase generica,
               #   nao os tres arquivos (hog-lib.c/deviceinfo.c/battery.c):
               #   e' a unica parte comum as tres formas da mensagem.
+              #
+              # As quatro abaixo foram medidas juntas, em 14d no bag (o
+              # host que mais disparava): 3.307 linhas e ~34 disparos
+              # estimados com o filtro de antes; 141 linhas e 0 com elas.
+              # tp e us nao mudam.
+              # relays.syncthing.net/endpoint -- 3.006 das 3.307 (91%).
+              #   O syncthing consultando o pool PUBLICO de relays e levando
+              #   "malformed HTTP response"/EOF. Investigado em 24/09: a
+              #   rede do bag estava normal (nenhum evento do
+              #   NetworkManager nas rajadas) -- o problema e' do lado do
+              #   pool. Relay so' e' usado quando a conexao direta entre os
+              #   hosts falha, e o sync seguiu funcionando.
+              # programname!~rcaldas-agent #.* -- saida de docker build que
+              #   o agente repassa ao syslog (as linhas comecam com o passo
+              #   do buildkit, "#13 18.48 ..."). O next build do bndes/bolo
+              #   loga "Invalid/Missing environment variable: MONGO_URI"
+              #   ao pre-renderizar (85 linhas) e o do car loga "Dynamic
+              #   server usage" (19) -- e os dois builds terminam OK. Build
+              #   que falha de verdade ja' abre o incidente build:<servico>,
+              #   com o log no email; contar a saida aqui so' duplicava em
+              #   forma de ruido. Filtro por programname (structured
+              #   metadata, pipeline) e nao por frase: corta a fonte toda,
+              #   e as linhas do PROPRIO agente (sem "#") continuam valendo.
+              # session healthcheck failed -- dockerd, 31. Sessao do
+              #   buildkit fechando no fim de cada docker build.
+              # .dpkg-tmp -- 14, numa rajada so': o colord lendo os perfis
+              #   ICC do ghostscript no meio do apt upgrade, quando os
+              #   arquivos ainda tem o nome temporario. Transitorio de
+              #   qualquer upgrade de pacote.
               expr: >-
                 sum by (host, service) (
                   count_over_time(
@@ -151,6 +180,9 @@ groups:
                     != `ALSA lib` != `audio device` != `ALSA sequencer` != `pulse)`
                     != `Error in sys.excepthook` != `Original exception was`
                     != `Request attribute has encountered an unlikely error`
+                    != `relays.syncthing.net/endpoint`
+                    | programname!~`rcaldas-agent #.*`
+                    != `session healthcheck failed` != `.dpkg-tmp`
                     [5m]
                   )
                 )
