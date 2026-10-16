@@ -19,8 +19,13 @@ groups:
   - orgId: 1
     name: log
     folder: RCaldas
-    # De quanto em quanto tempo a regra e' avaliada.
-    interval: 1m
+    # De quanto em quanto tempo as regras do grupo sao avaliadas. 2m e nao 1m:
+    # o Grafana estava sendo morto por OOM (teto de 512M, 457M de RSS na
+    # ultima morte, 16/10) e cada avaliacao e' uma consulta ao Loki por
+    # regra. O custo em deteccao e' no maximo 1 min -- todas as regras ja
+    # exigem `for:` de 5 a 15 min, e a janela das consultas (5m) e' maior
+    # que o intervalo. Vale pro grupo inteiro (log, disco, loop de rebuild).
+    interval: 2m
     rules:
       - uid: rcaldas-log-erro-sustentado
         title: Erro sustentado no log
