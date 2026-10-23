@@ -36,6 +36,9 @@ services:
       - ./web/app:/app/app
       - ./web/components:/app/components
       - ./web/lib:/app/lib
+      # Scripts servidos (/install, /backup-config, /atualiza-imagens...) sao lidos
+      # do disco em runtime -- sem esta montagem toda rota de script da' 500 no dev.
+      - ./web/served-scripts:/app/served-scripts
       - ./web/public:/app/public
       - ./web/middleware.ts:/app/middleware.ts
       - ./web/package.json:/app/package.json
