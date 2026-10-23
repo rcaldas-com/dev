@@ -68,7 +68,7 @@ services:
     depends_on:
       - redis
   site:
-    image: registry.rcaldas.com/rcaldas/site:2db3499-b2610232229
+    image: registry.rcaldas.com/rcaldas/site:2db3499-b2610232313
     restart: unless-stopped
     ports:
       - "8615:80"   # 8614 ja e' o rcaldas-static
