@@ -183,7 +183,11 @@ services:
     depends_on:
       - redis
   redis:
-    image: redis:8.10.1-alpine
+    # Tag da major, nao da versao: /monitor/imagens so' enxerga versao nova
+    # quando o digest DA MESMA TAG muda, entao tag de patch (8.10.1) ficava
+    # "em dia" pra sempre. Dentro da 8 o Redis mantem compatibilidade de
+    # dados e config; a troca continua manual, pelo "aplicar" da tela.
+    image: redis:8-alpine
     container_name: rcweb-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
@@ -209,8 +213,14 @@ services:
   # Os limites de memoria abaixo nao sao decorativos: o us tem ~1,7Gi livre
   # e ZERO swap. Container sem teto que surta leva o OOM killer pra cima do
   # vizinho.
+  #
+  # Tags: a mais larga que cada projeto publica sem cruzar major (ver o
+  # comentario do redis acima). Loki na "3". Grafana na minor ("13.3"): nao
+  # existe tag "13", e cada minor migra o banco interno -- voltar atras e'
+  # restaurar o grafana.db, entao subir de minor e' decisao, nao update.
+  # Alloy fixo: nao publica tag curta nenhuma e "latest" cruzaria a v2.
   loki:
-    image: grafana/loki:3.7.6
+    image: grafana/loki:3
     restart: unless-stopped
     command: -config.file=/etc/loki/loki.yaml
     volumes:
@@ -223,7 +233,7 @@ services:
         reservations:
           memory: 64M
   alloy:
-    image: grafana/alloy:v1.18.1
+    image: grafana/alloy:v1.21.3
     restart: unless-stopped
     # /var/log/remote/ e' 0750 root:root e os arquivos 0640 root:root. A
     # imagem do Alloy roda como usuario nao-root por padrao, entao sem isto
@@ -273,7 +283,7 @@ services:
     depends_on:
       - loki
   grafana:
-    image: grafana/grafana:13.2.0
+    image: grafana/grafana:13.3
     restart: unless-stopped
     ports:
       - "8616:3000"
