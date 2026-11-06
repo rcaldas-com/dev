@@ -97,7 +97,7 @@ services:
         reservations:
           memory: 16M
   wallet:
-    image: registry.rcaldas.com/rcaldas/wallet:5f9ac2c
+    image: registry.rcaldas.com/rcaldas/wallet:a6758a2
     restart: unless-stopped
     ports:
       - "8613:3000"
