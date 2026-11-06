@@ -3,3 +3,5 @@ db
 bkp
 redis-data
 minio
+garage/meta
+garage/data

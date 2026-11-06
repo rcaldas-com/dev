@@ -1,0 +1,30 @@
+# Garage -- S3 local do ambiente de DESENVOLVIMENTO (substitui o MinIO, que
+# deixou de ser publicado: sumiu do Docker Hub e fechou o quay.io).
+# Producao nao usa isto: la' o S3 e' externo (S3_* no .env do us).
+#
+# Segredo de RPC e token de admin NAO ficam aqui: vem de GARAGE_RPC_SECRET e
+# GARAGE_ADMIN_TOKEN no docker-compose.yml, num lugar so', porque o
+# garage-init (scripts de bootstrap) tambem precisa do token.
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+# sqlite e' o motor mais leve; lmdb so' compensa com muito objeto.
+db_engine = "sqlite"
+# Um no' so'. Com 1, o Garage nao tenta replicar pra lugar nenhum.
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+
+[s3_api]
+# Tem que bater com S3_REGION dos apps (default us-east-1): a regiao entra na
+# assinatura, e regiao diferente da' "AuthorizationHeaderMalformed".
+s3_region = "us-east-1"
+api_bind_addr = "[::]:3900"
+# Os apps usam path-style (forcePathStyle); isto so' existe porque o Garage
+# exige um valor.
+root_domain = ".s3.garage.localhost"
+
+[admin]
+# Usado so' pelo garage-init, dentro da rede do compose. Porta NAO publicada.
+api_bind_addr = "[::]:3903"

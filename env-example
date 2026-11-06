@@ -26,11 +26,14 @@ MONGO_URI=mongodb://user:password@mongo/rcaldas?authSource=admin
 # ambiente do worker — por isso um emailer atende web, car e wallet.
 REDIS_URL=redis://redis:6379
 
-# ═══════════════ S3 / MinIO (usado pelo car e pelo wallet) ═══════════════
-# Dev: o MinIO do próprio compose. Produção: gateway S3 externo.
-S3_HOST=http://minio:9000
-S3_KEY=root
-S3_SECRET=password
+# ═══════════════ S3 (usado pelo car e pelo wallet) ═══════════════
+# Dev: o Garage do próprio compose (garage/). Produção: gateway S3 externo.
+# Em dev a chave é FIXA e o garage-init a importa a cada `up` -- por isso
+# no formato do Garage: S3_KEY = "GK" + 24 hex, S3_SECRET = 64 hex. Valores
+# só de dev; trocar aqui é só gerar outro par (openssl rand -hex 12 / 32).
+S3_HOST=http://garage:3900
+S3_KEY=GK2a224ae42e6bad1cda1fe915
+S3_SECRET=c87f0959048daaa0877f928425e6283034b8e9d38fcca951db5e701cde18913e
 
 # ═══════════════ Wallet / Stellar ═══════════════
 # Secret da conta que financia contas novas e recargas de reserva.

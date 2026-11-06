@@ -34,6 +34,10 @@ BACKUP_DIR="backup-$(date +%Y%m%d-%H%M%S)"
 get_config_var() { grep "^$1=" "$CONFIG_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"'; }
 get_env_var()    { grep "^$1=" .env 2>/dev/null | cut -d'=' -f2- | tr -d '"'; }
 
+# S3 de qualquer lado (Garage do compose, provedor publico, host local): ver lib.
+# shellcheck source=lib-s3.sh
+source "$(dirname "$0")/lib-s3.sh"
+
 # Remove o caminho do banco do URI para conectar ao servidor inteiro
 # mongodb://user:pass@host:port/dbname?params -> mongodb://user:pass@host:port/?params
 server_uri() {
@@ -53,6 +57,7 @@ PROD_MONGO_URI=$(get_config_var "MONGO_URI")
 PROD_S3_HOST=$(get_config_var "S3_HOST")
 PROD_S3_KEY=$(get_config_var "S3_KEY")
 PROD_S3_SECRET=$(get_config_var "S3_SECRET")
+PROD_S3_REGION=$(get_config_var "S3_REGION"); PROD_S3_REGION=${PROD_S3_REGION:-us-east-1}
 
 HAS_PROD_S3=false
 [ -n "$PROD_S3_HOST" ] && [ -n "$PROD_S3_KEY" ] && [ -n "$PROD_S3_SECRET" ] && HAS_PROD_S3=true
@@ -63,21 +68,11 @@ LOCAL_MONGO_URI=$(get_env_var "MONGO_URI")
 LOCAL_S3_HOST=$(get_env_var "S3_HOST")
 LOCAL_S3_KEY=$(get_env_var "S3_KEY")
 LOCAL_S3_SECRET=$(get_env_var "S3_SECRET")
+LOCAL_S3_REGION=$(get_env_var "S3_REGION"); LOCAL_S3_REGION=${LOCAL_S3_REGION:-us-east-1}
 
 HAS_LOCAL_S3=false
 [ -n "$LOCAL_S3_HOST" ] && [ -n "$LOCAL_S3_KEY" ] && [ -n "$LOCAL_S3_SECRET" ] && HAS_LOCAL_S3=true
 
-IS_EXTERNAL_S3=false
-if echo "$LOCAL_S3_HOST" | grep -qE 'localhost|127\.0\.0\.1|host\.docker\.internal'; then
-    IS_EXTERNAL_S3=true
-fi
-if $IS_EXTERNAL_S3; then
-    S3_URL=$(echo "$LOCAL_S3_HOST" | sed 's/host\.docker\.internal/127.0.0.1/g')
-    S3_NET_ARGS="--network=host"
-else
-    S3_URL=$(echo "$LOCAL_S3_HOST" | sed 's/localhost/minio/g')
-    S3_NET_ARGS="--network=$(basename "$(pwd)")_default"
-fi
 
 PROD_SERVER_URI=$(server_uri "$PROD_MONGO_URI")
 
@@ -131,17 +126,13 @@ fi
 if $HAS_PROD_S3; then
     log "📥 Fazendo backup do S3 de produção..."
     mkdir -p "$BACKUP_DIR/s3"
-    docker run --rm -v "$(pwd)/$BACKUP_DIR/s3:/data" \
-        --entrypoint /bin/sh minio/mc:latest -c "
-            mc alias set prod '$PROD_S3_HOST' '$PROD_S3_KEY' '$PROD_S3_SECRET'
-            if mc ls prod/ >/dev/null 2>&1; then
-                echo 'Conectado ao S3 de produção'
-                mc mirror prod/ /data/ --quiet && echo 'Backup S3 concluído' || { echo 'Falha no mirror S3'; exit 1; }
-            else
-                echo 'Falha na conexão com S3 de produção'
-                exit 1
-            fi
-        " 2>/dev/null \
+    # rclone e nao minio/mc: a imagem do mc deixou de ser publica. Mesma
+    # ferramenta do backup diario (served-scripts/partials/dump-s3-sync.sh).
+    # Cada bucket vira uma pasta em s3/, que e' o layout que o restore espera.
+    # A origem pode ser um servico do compose (ex.: migrar do Garage local).
+    s3_ensure_service "$PROD_S3_HOST" || warn "⚠️  S3 de origem local nao ficou pronto"
+    s3_rclone prod "$PROD_S3_HOST" "$PROD_S3_KEY" "$PROD_S3_SECRET" "$PROD_S3_REGION" \
+        -v "$(pwd)/$BACKUP_DIR/s3:/data" -- sync prod: /data --fast-list -q 2>/dev/null \
         && log "✅ Backup S3 concluído" \
         || warn "⚠️  Falha no backup S3 (continuando sem arquivos S3)"
 else
@@ -156,7 +147,8 @@ else
     log "🔄 Reiniciando serviços locais..."
     docker compose down >/dev/null 2>&1 || true
     SERVICES_TO_START="mongo redis"
-    $HAS_LOCAL_S3 && SERVICES_TO_START="$SERVICES_TO_START minio"
+    # S3 local nao entra aqui: pode nem ser do compose (troca de provedor).
+    # s3_ensure_service sobe e espera so' se o endpoint for um servico.
     docker compose up -d $SERVICES_TO_START >/dev/null 2>&1
 fi
 
@@ -177,11 +169,8 @@ done
 log "✅ MongoDB local pronto"
 
 if $HAS_LOCAL_S3; then
-    log "⏳ Aguardando MinIO local..."
-    for i in {1..20}; do
-        curl -sf "$LOCAL_S3_HOST/minio/health/live" >/dev/null 2>&1 && break
-        sleep 2
-    done
+    log "⏳ Aguardando S3 de destino ($LOCAL_S3_HOST)..."
+    s3_ensure_service "$LOCAL_S3_HOST" || warn "⚠️  S3 local nao ficou pronto -- o restore do S3 deve falhar"
 fi
 
 # === FASE 5: RESTAURAR MONGODB ===
@@ -201,17 +190,10 @@ fi
 if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
     log "📤 Restaurando S3..."
     if [ -d "$BACKUP_DIR/s3" ] && [ "$(ls -A "$BACKUP_DIR/s3" 2>/dev/null)" ]; then
-        docker run --rm $S3_NET_ARGS \
-            -v "$(pwd)/$BACKUP_DIR/s3:/data" \
-            --entrypoint /bin/sh minio/mc:latest -c "
-                mc alias set local '$S3_URL' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET'
-                if mc ls local/ >/dev/null 2>&1; then
-                    mc mirror /data/ local/ --overwrite --remove --quiet && echo 'Restore S3 concluído' || echo 'Falha no restore S3'
-                else
-                    echo 'Falha na conexão com S3 local'
-                    exit 1
-                fi
-            " >/dev/null \
+        # sync = espelho: cria os buckets que faltam (a chave de dev pode,
+        # ver garage/init.sh) e apaga o que nao existe mais em producao.
+        s3_rclone dest "$LOCAL_S3_HOST" "$LOCAL_S3_KEY" "$LOCAL_S3_SECRET" "$LOCAL_S3_REGION" \
+            -v "$(pwd)/$BACKUP_DIR/s3:/data:ro" -- sync /data dest: --fast-list -q >/dev/null \
             && log "✅ Restore S3 concluído" \
             || warn "⚠️  Falha no restore S3 (dados MongoDB restaurados com sucesso)"
     else
@@ -257,11 +239,8 @@ docker run --rm $MONGO_NET_ARGS mongo:7 \
 if $HAS_PROD_S3 && $HAS_LOCAL_S3; then
     info ""
     info "📊 S3 local:"
-    docker run --rm $S3_NET_ARGS \
-        --entrypoint /bin/sh minio/mc:latest -c "
-            mc alias set local '$S3_URL' '$LOCAL_S3_KEY' '$LOCAL_S3_SECRET' >/dev/null 2>&1
-            mc du local/ 2>/dev/null | tail -1 || echo '  (nenhum arquivo)'
-        " 2>/dev/null || true
+    s3_rclone dest "$LOCAL_S3_HOST" "$LOCAL_S3_KEY" "$LOCAL_S3_SECRET" "$LOCAL_S3_REGION" -- \
+        size dest: --fast-list 2>/dev/null | sed 's/^/  /' || echo '  (nenhum arquivo)'
 fi
 
 log ""
