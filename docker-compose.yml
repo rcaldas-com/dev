@@ -131,7 +131,7 @@ services:
       CCXT_EXCHANGES: okx,binance,kraken
       CCXT_CACHE_TTL: "10"
   mongo:
-    image: mongo:8.0
+    image: mongo:9.0
     restart: unless-stopped
     env_file: .env
     environment:
